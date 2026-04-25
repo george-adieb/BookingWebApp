@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Search, CheckCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import TimePickerInput from '../components/TimePickerInput';
+import ArabicTimePicker, { formatArabic12 } from '../components/ArabicTimePicker';
 
 export default function AvailabilityPage() {
   const navigate = useNavigate();
@@ -92,22 +92,18 @@ export default function AvailabilityPage() {
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none"
             />
           </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">من الساعة</label>
-            <TimePickerInput
-              value={filters.start_time}
-              onChange={(v) => setFilters({ ...filters, start_time: v })}
-              placeholder="00:00"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">إلى الساعة</label>
-            <TimePickerInput
-              value={filters.end_time}
-              onChange={(v) => setFilters({ ...filters, end_time: v })}
-              placeholder="00:00"
-            />
-          </div>
+          <ArabicTimePicker
+            label="من الساعة"
+            value={filters.start_time}
+            onChange={(v) => setFilters({ ...filters, start_time: v })}
+            required
+          />
+          <ArabicTimePicker
+            label="إلى الساعة"
+            value={filters.end_time}
+            onChange={(v) => setFilters({ ...filters, end_time: v })}
+            required
+          />
           <div className="flex flex-col justify-end">
             <button
               type="submit"
@@ -120,6 +116,16 @@ export default function AvailabilityPage() {
             </button>
           </div>
         </form>
+
+        {/* Time preview */}
+        {filters.start_time && filters.end_time && (
+          <div className="mt-4 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800 font-semibold text-center">
+            البحث عن أماكن متاحة من{' '}
+            <span className="text-[#8B0000] font-bold">{formatArabic12(filters.start_time)}</span>
+            {' '}إلى{' '}
+            <span className="text-[#8B0000] font-bold">{formatArabic12(filters.end_time)}</span>
+          </div>
+        )}
       </div>
 
       {/* RPC Error */}

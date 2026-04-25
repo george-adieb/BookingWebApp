@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import StatusBadge from '../components/StatusBadge';
+import { formatArabic12 } from '../components/ArabicTimePicker';
 import {
   LogOut, Filter, Check, X, Calendar, MapPin, Clock, Phone,
   User, LayoutDashboard, Search, Loader2, AlertCircle,
@@ -129,7 +130,9 @@ function BookingCard({ booking, actionLoading, actionError, onApprove, onReject,
             <Calendar className="w-3.5 h-3.5 flex-shrink-0" />التاريخ والوقت
           </div>
           <p className="font-bold text-gray-900 text-sm">{booking.booking_date}</p>
-          <p className="text-sm text-gray-500" dir="ltr">{booking.start_time} — {booking.end_time}</p>
+          <p className="text-sm text-gray-500">
+            {formatArabic12(booking.start_time)} — {formatArabic12(booking.end_time)}
+          </p>
         </div>
 
         {/* Places */}

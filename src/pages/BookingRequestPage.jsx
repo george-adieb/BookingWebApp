@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Send, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import TimePickerInput from '../components/TimePickerInput';
+import ArabicTimePicker, { formatArabic12 } from '../components/ArabicTimePicker';
 import { useSearchParams } from 'react-router-dom';
 
 export default function BookingRequestPage() {
@@ -18,8 +18,8 @@ export default function BookingRequestPage() {
     phone:          '',
     place_ids:      preSelectedPlaceId ? [preSelectedPlaceId] : [],
     booking_date:   preSelectedDate,
-    start_time:     '',
-    end_time:       '',
+    start_time:     '18:00',  // default: 06:00 مساءً
+    end_time:       '20:00',  // default: 08:00 مساءً
     notes:          '',
   });
 
@@ -214,25 +214,31 @@ export default function BookingRequestPage() {
               className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none"
             />
           </div>
-          <div className="space-y-2">
-            <label htmlFor="start_time" className="block text-sm font-semibold text-gray-700">من الساعة</label>
-            <TimePickerInput
-              id="start_time"
-              value={formData.start_time}
-              onChange={(v) => { setFormData((p) => ({ ...p, start_time: v })); setError(''); }}
-              placeholder="00:00"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="end_time" className="block text-sm font-semibold text-gray-700">إلى الساعة</label>
-            <TimePickerInput
-              id="end_time"
-              value={formData.end_time}
-              onChange={(v) => { setFormData((p) => ({ ...p, end_time: v })); setError(''); }}
-              placeholder="00:00"
-            />
-          </div>
+          <ArabicTimePicker
+            id="start_time"
+            label="من الساعة"
+            value={formData.start_time}
+            onChange={(v) => { setFormData((p) => ({ ...p, start_time: v })); setError(''); }}
+            required
+          />
+          <ArabicTimePicker
+            id="end_time"
+            label="إلى الساعة"
+            value={formData.end_time}
+            onChange={(v) => { setFormData((p) => ({ ...p, end_time: v })); setError(''); }}
+            required
+          />
         </div>
+
+        {/* Time preview */}
+        {formData.start_time && formData.end_time && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800 font-semibold text-center">
+            سيتم الحجز من{' '}
+            <span className="text-[#8B0000] font-bold">{formatArabic12(formData.start_time)}</span>
+            {' '}إلى{' '}
+            <span className="text-[#8B0000] font-bold">{formatArabic12(formData.end_time)}</span>
+          </div>
+        )}
 
         {/* Place Selection */}
         <div className="space-y-3">
