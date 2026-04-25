@@ -18,13 +18,36 @@ function normalizePhone(phone) {
 }
 
 function buildWaMessage(booking) {
+  // Build places list from junction table (already normalised onto booking.places)
+  const placeLines = booking.places?.length
+    ? booking.places.map((p) => `- ${formatPlace(p)}`).join('\n')
+    : null;
+  const placesBlock = placeLines
+    ? `الأماكن:\n${placeLines}`
+    : 'الأماكن: لم يتم تحديد أماكن';
+
+  const startAr = formatArabic12(booking.start_time);
+  const endAr   = formatArabic12(booking.end_time);
+
   if (booking.status === 'approved') {
     return encodeURIComponent(
-      `مرحبًا، تم تأكيد حجزك.\nالتاريخ: ${booking.booking_date}\nالوقت: من ${booking.start_time} إلى ${booking.end_time}`
+      `مرحبًا، تم تأكيد حجزك في كنيسة مارجرجس سيدي بشر.\n\n` +
+      `تفاصيل الحجز:\n` +
+      `التاريخ: ${booking.booking_date}\n` +
+      `الوقت: من ${startAr} إلى ${endAr}\n` +
+      `${placesBlock}\n\n` +
+      `ربنا يبارك خدمتك.`
     );
   }
   if (booking.status === 'rejected') {
-    return encodeURIComponent('مرحبًا، نعتذر، لم يتم قبول طلب الحجز.');
+    return encodeURIComponent(
+      `مرحبًا، نعتذر لعدم إمكانية تأكيد حجزك في كنيسة مارجرجس سيدي بشر.\n\n` +
+      `تفاصيل الطلب:\n` +
+      `التاريخ: ${booking.booking_date}\n` +
+      `الوقت: من ${startAr} إلى ${endAr}\n` +
+      `${placesBlock}\n\n` +
+      `برجاء التواصل مع المسؤول لمعرفة التفاصيل.`
+    );
   }
   return null;
 }
