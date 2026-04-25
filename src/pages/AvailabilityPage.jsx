@@ -17,10 +17,9 @@ export default function AvailabilityPage() {
   const [placesLoading, setPlacesLoading] = useState(true);
   const [searching, setSearching]       = useState(false);
   const [hasSearched, setHasSearched]   = useState(false);
-  const [availability, setAvailability] = useState({}); // placeId → true/false
+  const [availability, setAvailability] = useState({});
   const [rpcError, setRpcError]         = useState('');
 
-  // Fetch all active places on mount
   useEffect(() => {
     supabase
       .from('places')
@@ -33,7 +32,6 @@ export default function AvailabilityPage() {
       });
   }, []);
 
-  // Group by building
   const groupedPlaces = places.reduce((acc, place) => {
     if (!acc[place.building]) acc[place.building] = [];
     acc[place.building].push(place);
@@ -58,13 +56,7 @@ export default function AvailabilityPage() {
         p_exclude_id: null,
       });
 
-      if (error) {
-        failed = true;
-        break;
-      }
-
-      // true  → available
-      // false → NOT available
+      if (error) { failed = true; break; }
       results[place.id] = data === true;
     }
 
@@ -74,7 +66,6 @@ export default function AvailabilityPage() {
     } else {
       setAvailability(results);
     }
-
     setSearching(false);
   };
 
@@ -83,21 +74,22 @@ export default function AvailabilityPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Search Form */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <h2 className="text-2xl font-bold text-[#8B0000] mb-6 flex items-center gap-2">
-          <Search className="w-6 h-6" />
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+        <h2 className="text-xl sm:text-2xl font-bold text-[#8B0000] mb-5 flex items-center gap-2">
+          <Search className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
           البحث عن أماكن متاحة
         </h2>
 
-        <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        {/* Stack vertically on mobile, 4-col grid on md+ */}
+        <form onSubmit={handleSearch} className="flex flex-col sm:grid sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700">التاريخ</label>
             <input
               type="date" required value={filters.date}
               onChange={(e) => setFilters({ ...filters, date: e.target.value })}
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none"
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none"
             />
           </div>
           <div className="space-y-2">
@@ -116,21 +108,25 @@ export default function AvailabilityPage() {
               placeholder="00:00"
             />
           </div>
-          <button
-            type="submit"
-            disabled={searching || placesLoading}
-            className="w-full bg-[#8B0000] text-white py-2.5 rounded-lg font-bold hover:bg-red-900 transition-colors h-[42px] flex items-center justify-center gap-2 disabled:opacity-70"
-          >
-            {searching ? <><Loader2 className="w-4 h-4 animate-spin" />جارٍ البحث...</> : 'بحث'}
-          </button>
+          <div className="flex flex-col justify-end">
+            <button
+              type="submit"
+              disabled={searching || placesLoading}
+              className="w-full bg-[#8B0000] text-white py-2.5 rounded-lg font-bold hover:bg-red-900 transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
+            >
+              {searching
+                ? <><Loader2 className="w-4 h-4 animate-spin" />جارٍ البحث...</>
+                : 'بحث'}
+            </button>
+          </div>
         </form>
       </div>
 
       {/* RPC Error */}
       {rpcError && (
-        <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl font-semibold">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          {rpcError}
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl font-semibold text-sm sm:text-base">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <span>{rpcError}</span>
         </div>
       )}
 
@@ -152,13 +148,14 @@ export default function AvailabilityPage() {
 
       {/* Results */}
       {!searching && hasSearched && !rpcError && (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {Object.entries(groupedPlaces).map(([building, bPlaces]) => (
             <div key={building} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="bg-gray-50 px-6 py-4 border-b border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900">{building}</h3>
+              <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900">{building}</h3>
               </div>
-              <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* 1 col mobile → 2 cols sm → 3 cols lg */}
+              <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {bPlaces.map((place) => {
                   const isAvailable = availability[place.id] === true;
                   const isChecked   = place.id in availability;
@@ -166,7 +163,7 @@ export default function AvailabilityPage() {
                   return (
                     <div
                       key={place.id}
-                      className={`relative flex flex-col justify-between p-4 rounded-xl border-2 transition-all ${
+                      className={`flex flex-col justify-between p-4 rounded-xl border-2 transition-all ${
                         !isChecked
                           ? 'border-gray-200 bg-gray-50'
                           : isAvailable
@@ -174,19 +171,19 @@ export default function AvailabilityPage() {
                           : 'border-red-100 bg-red-50/30 opacity-75'
                       }`}
                     >
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <p className="font-bold text-gray-900">{place.name}</p>
+                      <div className="flex justify-between items-start gap-2 mb-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-gray-900 break-words">{place.name}</p>
                           <p className="text-sm text-gray-600">{place.floor}</p>
                         </div>
                         {isChecked && (
                           isAvailable
-                            ? <CheckCircle className="w-6 h-6 text-green-500" />
-                            : <XCircle className="w-6 h-6 text-red-500" />
+                            ? <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-green-500 flex-shrink-0" />
+                            : <XCircle className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 flex-shrink-0" />
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-200/50">
+                      <div className="flex items-center justify-between pt-3 border-t border-gray-200/50 gap-2">
                         {isChecked && (
                           <span className={`text-sm font-bold ${isAvailable ? 'text-green-700' : 'text-red-700'}`}>
                             {isAvailable ? 'متاح' : 'محجوز'}
@@ -195,7 +192,7 @@ export default function AvailabilityPage() {
                         {isAvailable && (
                           <button
                             onClick={() => handleBookClick(place.id)}
-                            className="text-sm bg-white border border-green-200 text-green-700 px-3 py-1 rounded-md hover:bg-green-50 font-semibold"
+                            className="text-sm bg-white border border-green-200 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50 font-semibold transition-colors"
                           >
                             احجز الآن
                           </button>
