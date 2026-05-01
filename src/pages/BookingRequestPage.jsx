@@ -1,8 +1,45 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Send, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import ArabicTimePicker, { formatArabic12 } from '../components/ArabicTimePicker';
-import { useSearchParams } from 'react-router-dom';
+
+// ── Email notification (fire-and-forget) ─────────────────────────────────────
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+async function sendBookingEmail(formData, places) {
+  try {
+    const selectedPlaces = formData.place_ids
+      .map((id) => places.find((p) => p.id === id))
+      .filter(Boolean);
+
+    await fetch(`${SUPABASE_URL}/functions/v1/send-booking-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        requester_name: formData.requester_name,
+        service_name:   formData.service_name,
+        phone:          formData.phone,
+        booking_date:   formData.booking_date,
+        start_time:     formData.start_time,
+        end_time:       formData.end_time,
+        places:         selectedPlaces.map((p) => ({
+          building: p.building,
+          floor:    p.floor,
+          name:     p.name,
+        })),
+        notes: formData.notes || '',
+      }),
+    });
+  } catch (err) {
+    console.error('[sendBookingEmail] Failed to send email notification:', err);
+  }
+}
 
 export default function BookingRequestPage() {
   const [searchParams] = useSearchParams();
@@ -121,6 +158,11 @@ export default function BookingRequestPage() {
       setError('تم إنشاء الطلب ولكن حدث خطأ في ربط الأماكن، يرجى التواصل مع المسؤول');
       setIsSubmitting(false); return;
     }
+
+    // Fire-and-forget email notification — never blocks the booking flow
+    sendBookingEmail(formData, places).catch((err) =>
+      console.error('[sendBookingEmail] Unhandled promise rejection:', err)
+    );
 
     setSuccess(true);
     setIsSubmitting(false);
