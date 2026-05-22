@@ -6,7 +6,7 @@ import { formatArabic12 } from '../components/ArabicTimePicker';
 import {
   LogOut, Filter, Check, X, Calendar, MapPin, Clock, Phone,
   User, LayoutDashboard, Search, Loader2, AlertCircle,
-  FileText, StickyNote, List, Inbox,
+  FileText, StickyNote, List, Inbox, RefreshCw,
 } from 'lucide-react';
 
 const formatPlace = (p) => p ? `${p.building} - ${p.floor} - ${p.name}` : '—';
@@ -17,8 +17,47 @@ function normalizePhone(phone) {
   return cleaned;
 }
 
+// ── Arabic date label ─────────────────────────────────────────────────────────
+function formatDateAr(dateStr) {
+  if (!dateStr) return '';
+  try {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('ar-EG', {
+      year: 'numeric', month: 'long', day: 'numeric',
+    });
+  } catch { return dateStr; }
+}
+
+// ── Derive first/last dates for a recurring group from a single booking row ───
+function deriveRecurringDates(booking) {
+  if (!booking.recurrence_group_id) return { firstDate: null, lastDate: null };
+  const base = booking.booking_date;
+  const total = booking.total_occurrences || 1;
+  const occNum = booking.occurrence_number || 1;
+  const interval = booking.recurrence_type; // 'weekly' | 'monthly'
+
+  // Calculate first occurrence date
+  function shiftDate(dateStr, steps) {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (interval === 'weekly') {
+      d.setDate(d.getDate() + 7 * steps);
+    } else {
+      const targetMonth = d.getMonth() + steps;
+      const year = d.getFullYear() + Math.floor(targetMonth / 12);
+      const month = ((targetMonth % 12) + 12) % 12;
+      const day = d.getDate();
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      d.setFullYear(year, month, Math.min(day, lastDay));
+    }
+    return d.toISOString().split('T')[0];
+  }
+
+  const firstDate = shiftDate(base, -(occNum - 1));
+  const lastDate  = shiftDate(firstDate, total - 1);
+  return { firstDate, lastDate };
+}
+
+// ── WhatsApp message builder ──────────────────────────────────────────────────
 function buildWaMessage(booking) {
-  // Build places list from junction table (already normalised onto booking.places)
   const placeLines = booking.places?.length
     ? booking.places.map((p) => `- ${formatPlace(p)}`).join('\n')
     : null;
@@ -29,22 +68,62 @@ function buildWaMessage(booking) {
   const startAr = formatArabic12(booking.start_time);
   const endAr   = formatArabic12(booking.end_time);
 
+  const isRecurring = !!booking.recurrence_group_id;
+
+  if (!isRecurring) {
+    // ── One-time (unchanged) ────────────────────────────────────────────────
+    if (booking.status === 'approved') {
+      return encodeURIComponent(
+        `مرحبًا، تم تأكيد حجزك في كنيسة مارجرجس سيدي بشر.\n\n` +
+        `تفاصيل الحجز:\n` +
+        `التاريخ: ${booking.booking_date}\n` +
+        `الوقت: من ${startAr} إلى ${endAr}\n` +
+        `${placesBlock}\n\n` +
+        `ربنا يبارك خدمتك.`
+      );
+    }
+    if (booking.status === 'rejected') {
+      return encodeURIComponent(
+        `مرحبًا، نعتذر لعدم إمكانية تأكيد حجزك في كنيسة مارجرجس سيدي بشر.\n\n` +
+        `تفاصيل الطلب:\n` +
+        `التاريخ: ${booking.booking_date}\n` +
+        `الوقت: من ${startAr} إلى ${endAr}\n` +
+        `${placesBlock}\n\n` +
+        `برجاء التواصل مع المسؤول لمعرفة التفاصيل.`
+      );
+    }
+    return null;
+  }
+
+  // ── Recurring ─────────────────────────────────────────────────────────────
+  const intervalLabel = booking.recurrence_type === 'weekly' ? 'أسبوعيًا' : 'شهريًا';
+  const { firstDate, lastDate } = deriveRecurringDates(booking);
+  const count = booking.total_occurrences || '—';
+
   if (booking.status === 'approved') {
     return encodeURIComponent(
-      `مرحبًا، تم تأكيد حجزك في كنيسة مارجرجس سيدي بشر.\n\n` +
+      `مرحبًا، تم تأكيد حجزك المتكرر في كنيسة مارجرجس سيدي بشر.\n\n` +
       `تفاصيل الحجز:\n` +
-      `التاريخ: ${booking.booking_date}\n` +
-      `الوقت: من ${startAr} إلى ${endAr}\n` +
+      `نوع الحجز: حجز متكرر\n` +
+      `التكرار: ${intervalLabel}\n` +
+      `عدد المرات: ${count}\n` +
+      `من تاريخ: ${firstDate || '—'}\n` +
+      `إلى تاريخ: ${lastDate || '—'}\n` +
+      `الوقت: من ${startAr} إلى ${endAr}\n\n` +
       `${placesBlock}\n\n` +
       `ربنا يبارك خدمتك.`
     );
   }
   if (booking.status === 'rejected') {
     return encodeURIComponent(
-      `مرحبًا، نعتذر لعدم إمكانية تأكيد حجزك في كنيسة مارجرجس سيدي بشر.\n\n` +
+      `مرحبًا، نعتذر لعدم إمكانية تأكيد حجزك المتكرر في كنيسة مارجرجس سيدي بشر.\n\n` +
       `تفاصيل الطلب:\n` +
-      `التاريخ: ${booking.booking_date}\n` +
-      `الوقت: من ${startAr} إلى ${endAr}\n` +
+      `نوع الحجز: حجز متكرر\n` +
+      `التكرار: ${intervalLabel}\n` +
+      `عدد المرات: ${count}\n` +
+      `من تاريخ: ${firstDate || '—'}\n` +
+      `إلى تاريخ: ${lastDate || '—'}\n` +
+      `الوقت: من ${startAr} إلى ${endAr}\n\n` +
       `${placesBlock}\n\n` +
       `برجاء التواصل مع المسؤول لمعرفة التفاصيل.`
     );
@@ -94,8 +173,12 @@ function TabBtn({ active, onClick, icon, children }) {
   );
 }
 
-function RejectModal({ onConfirm, onCancel, loading }) {
+// ── Reject Modal — supports scope selection for recurring bookings ─────────────
+function RejectModal({ booking, onConfirm, onCancel, loading }) {
   const [reason, setReason] = useState('');
+  const [scope, setScope]   = useState('single'); // 'single' | 'all'
+  const isRecurring = !!booking?.recurrence_group_id;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 space-y-4" dir="rtl">
@@ -104,10 +187,31 @@ function RejectModal({ onConfirm, onCancel, loading }) {
         <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} disabled={loading}
           placeholder="سبب الرفض (اختياري)..."
           className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none resize-none" />
+
+        {isRecurring && (
+          <div className="space-y-2">
+            <p className="text-sm font-bold text-gray-700">تطبيق على:</p>
+            <div className="space-y-2">
+              <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${scope === 'single' ? 'border-[#8B0000] bg-red-50' : 'border-gray-200'}`}>
+                <input type="radio" name="rejectScope" value="single"
+                  checked={scope === 'single'} onChange={() => setScope('single')}
+                  className="w-4 h-4 text-[#8B0000] focus:ring-[#8B0000]" />
+                <span className="text-sm font-semibold text-gray-800">هذا الحجز فقط</span>
+              </label>
+              <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${scope === 'all' ? 'border-[#8B0000] bg-red-50' : 'border-gray-200'}`}>
+                <input type="radio" name="rejectScope" value="all"
+                  checked={scope === 'all'} onChange={() => setScope('all')}
+                  className="w-4 h-4 text-[#8B0000] focus:ring-[#8B0000]" />
+                <span className="text-sm font-semibold text-gray-800">كل الحجوزات المتكررة المرتبطة</span>
+              </label>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-3 justify-end">
           <button onClick={onCancel} disabled={loading}
             className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold text-sm">إلغاء</button>
-          <button onClick={() => onConfirm(reason)} disabled={loading}
+          <button onClick={() => onConfirm(reason, scope)} disabled={loading}
             className="px-5 py-2 rounded-lg bg-red-600 text-white font-bold hover:bg-red-700 flex items-center gap-2 disabled:opacity-70 text-sm">
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}تأكيد الرفض
           </button>
@@ -117,6 +221,74 @@ function RejectModal({ onConfirm, onCancel, loading }) {
   );
 }
 
+// ── Approve scope modal for recurring bookings ────────────────────────────────
+function ApproveScopeModal({ booking, onConfirm, onCancel, loading, scopeError }) {
+  const [scope, setScope] = useState('single');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 space-y-4" dir="rtl">
+        <h3 className="text-lg font-bold text-gray-900">الموافقة على الحجز المتكرر</h3>
+        <div className="space-y-2">
+          <p className="text-sm font-bold text-gray-700">تطبيق الموافقة على:</p>
+          <div className="space-y-2">
+            <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${scope === 'single' ? 'border-green-600 bg-green-50' : 'border-gray-200'}`}>
+              <input type="radio" name="approveScope" value="single"
+                checked={scope === 'single'} onChange={() => setScope('single')}
+                className="w-4 h-4 text-green-600 focus:ring-green-600" />
+              <span className="text-sm font-semibold text-gray-800">هذا الحجز فقط</span>
+            </label>
+            <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${scope === 'all' ? 'border-green-600 bg-green-50' : 'border-gray-200'}`}>
+              <input type="radio" name="approveScope" value="all"
+                checked={scope === 'all'} onChange={() => setScope('all')}
+                className="w-4 h-4 text-green-600 focus:ring-green-600" />
+              <div>
+                <span className="text-sm font-semibold text-gray-800">كل الحجوزات المتكررة المرتبطة</span>
+                <p className="text-xs text-gray-500 mt-0.5">سيتم التحقق من توفر جميع المواعيد قبل الموافقة</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {scopeError && (
+          <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm font-semibold">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />{scopeError}
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end">
+          <button onClick={onCancel} disabled={loading}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold text-sm">إلغاء</button>
+          <button onClick={() => onConfirm(scope)} disabled={loading}
+            className="px-5 py-2 rounded-lg bg-green-600 text-white font-bold hover:bg-green-700 flex items-center gap-2 disabled:opacity-70 text-sm">
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            <Check className="w-4 h-4" />موافقة
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Recurrence info badge / block ─────────────────────────────────────────────
+function RecurrenceBadge({ booking }) {
+  if (!booking.recurrence_group_id) return null;
+  const intervalLabel = booking.recurrence_type === 'weekly' ? 'أسبوعيًا' : 'شهريًا';
+  const { firstDate, lastDate } = deriveRecurringDates(booking);
+  return (
+    <div className="mt-2 space-y-1.5">
+      <span className="inline-flex items-center gap-1.5 bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2.5 py-0.5 text-xs font-bold">
+        <RefreshCw className="w-3 h-3" />حجز متكرر
+      </span>
+      <div className="bg-purple-50 border border-purple-100 rounded-lg px-3 py-2 text-xs text-purple-800 space-y-0.5">
+        <p><span className="font-bold">يتكرر:</span> {intervalLabel}</p>
+        <p><span className="font-bold">عدد المرات:</span> {booking.total_occurrences || '—'} &nbsp;•&nbsp; <span className="font-bold">الحجز رقم:</span> {booking.occurrence_number || '—'} من {booking.total_occurrences || '—'}</p>
+        {firstDate && <p><span className="font-bold">من:</span> {formatDateAr(firstDate)} &nbsp;•&nbsp; <span className="font-bold">إلى:</span> {formatDateAr(lastDate)}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── Booking Card ──────────────────────────────────────────────────────────────
 function BookingCard({ booking, actionLoading, actionError, onApprove, onReject, showActions }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
@@ -130,6 +302,7 @@ function BookingCard({ booking, actionLoading, actionError, onApprove, onReject,
             </div>
             <p className="font-bold text-gray-900 break-words">{booking.requester_name}</p>
             <p className="text-sm text-gray-500 break-words">{booking.service_name}</p>
+            <RecurrenceBadge booking={booking} />
           </div>
           <div className="flex-shrink-0">
             <StatusBadge status={booking.status} />
@@ -207,7 +380,7 @@ function BookingCard({ booking, actionLoading, actionError, onApprove, onReject,
             {actionLoading === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             موافقة
           </button>
-          <button onClick={() => onReject(booking.id)} disabled={actionLoading === booking.id}
+          <button onClick={() => onReject(booking)} disabled={actionLoading === booking.id}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-xl font-bold text-sm transition-colors disabled:opacity-50">
             <X className="w-4 h-4" />رفض
           </button>
@@ -240,14 +413,21 @@ function EmptyState({ text }) {
   );
 }
 
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab]       = useState('pending');
-  const [bookings, setBookings]         = useState([]);
-  const [loading, setLoading]           = useState(true);
+  const [activeTab, setActiveTab]         = useState('pending');
+  const [bookings, setBookings]           = useState([]);
+  const [loading, setLoading]             = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
-  const [actionError, setActionError]   = useState(null);
-  const [rejectTarget, setRejectTarget] = useState(null);
+  const [actionError, setActionError]     = useState(null);
+
+  // Reject modal state
+  const [rejectTarget, setRejectTarget]   = useState(null); // full booking object
+
+  // Approve scope modal state (only for recurring)
+  const [approveTarget, setApproveTarget]   = useState(null); // full booking object
+  const [approveScopeError, setApproveScopeError] = useState('');
 
   const [pf, setPf] = useState({ search: '', date: '' });
   const [af, setAf] = useState({ search: '', date: '', status: '', building: '', service: '' });
@@ -283,8 +463,21 @@ export default function AdminDashboard() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate('/admin/login'); };
 
-  const handleApprove = async (booking) => {
-    setActionLoading(booking.id); setActionError(null);
+  // ── Approve ───────────────────────────────────────────────────────────────
+  const handleApprove = (booking) => {
+    setActionError(null);
+    setApproveScopeError('');
+    if (booking.recurrence_group_id) {
+      // Open scope modal for recurring bookings
+      setApproveTarget(booking);
+    } else {
+      // Direct approve for one-time bookings (unchanged logic)
+      doApproveSingle(booking);
+    }
+  };
+
+  const doApproveSingle = async (booking) => {
+    setActionLoading(booking.id);
     const placeItems = booking.booking_request_places || [];
     for (const item of placeItems) {
       const { data, error } = await supabase.rpc('check_place_availability', {
@@ -296,17 +489,114 @@ export default function AdminDashboard() {
     }
     const { error } = await supabase.from('booking_requests').update({ status: 'approved' }).eq('id', booking.id);
     if (error) setActionError({ id: booking.id, message: 'حدث خطأ أثناء الموافقة' });
-    setActionLoading(null); fetchBookings();
+    setActionLoading(null);
+    fetchBookings();
   };
 
-  const handleRejectConfirm = async (reason) => {
-    setActionLoading(rejectTarget);
-    const { error } = await supabase.from('booking_requests')
-      .update({ status: 'rejected', admin_note: reason || null }).eq('id', rejectTarget);
-    if (error) setActionError({ id: rejectTarget, message: 'حدث خطأ أثناء الرفض' });
-    setActionLoading(null); setRejectTarget(null); fetchBookings();
+  const handleApproveScopeConfirm = async (scope) => {
+    if (!approveTarget) return;
+    setApproveScopeError('');
+
+    if (scope === 'single') {
+      setApproveTarget(null);
+      doApproveSingle(approveTarget);
+      return;
+    }
+
+    // scope === 'all' — fetch all pending bookings in the same group
+    setActionLoading(approveTarget.id);
+    const { data: groupRows, error: fetchError } = await supabase
+      .from('booking_requests')
+      .select(`id, booking_date, start_time, end_time, booking_request_places ( place_id )`)
+      .eq('recurrence_group_id', approveTarget.recurrence_group_id)
+      .eq('status', 'pending');
+
+    if (fetchError || !groupRows) {
+      setApproveScopeError('حدث خطأ أثناء جلب الحجوزات المرتبطة');
+      setActionLoading(null); return;
+    }
+
+    // Re-check availability for every occurrence
+    for (const row of groupRows) {
+      for (const item of (row.booking_request_places || [])) {
+        const { data: avail, error: rpcError } = await supabase.rpc('check_place_availability', {
+          p_place_id:   item.place_id,
+          p_date:       row.booking_date,
+          p_start_time: row.start_time,
+          p_end_time:   row.end_time,
+          p_exclude_id: row.id,
+        });
+        if (rpcError) {
+          setApproveScopeError('حدث خطأ أثناء التحقق من توفر الأماكن');
+          setActionLoading(null); return;
+        }
+        if (avail === false) {
+          setApproveScopeError('لا يمكن الموافقة على كل الحجوزات لأن بعض المواعيد أصبحت محجوزة');
+          setActionLoading(null); return;
+        }
+      }
+    }
+
+    // All clear — bulk approve
+    const ids = groupRows.map((r) => r.id);
+    const { error: updateError } = await supabase
+      .from('booking_requests')
+      .update({ status: 'approved' })
+      .in('id', ids);
+
+    if (updateError) {
+      setApproveScopeError('حدث خطأ أثناء الموافقة على الحجوزات');
+      setActionLoading(null); return;
+    }
+
+    setActionLoading(null);
+    setApproveTarget(null);
+    fetchBookings();
   };
 
+  // ── Reject ────────────────────────────────────────────────────────────────
+  const handleReject = (booking) => {
+    setActionError(null);
+    setRejectTarget(booking);
+  };
+
+  const handleRejectConfirm = async (reason, scope) => {
+    if (!rejectTarget) return;
+    setActionLoading(rejectTarget.id);
+
+    if (!rejectTarget.recurrence_group_id || scope === 'single') {
+      // Single reject (current behavior)
+      const { error } = await supabase.from('booking_requests')
+        .update({ status: 'rejected', admin_note: reason || null }).eq('id', rejectTarget.id);
+      if (error) setActionError({ id: rejectTarget.id, message: 'حدث خطأ أثناء الرفض' });
+    } else {
+      // scope === 'all' — reject all pending in the group
+      const { data: groupRows, error: fetchError } = await supabase
+        .from('booking_requests')
+        .select('id')
+        .eq('recurrence_group_id', rejectTarget.recurrence_group_id)
+        .eq('status', 'pending');
+
+      if (fetchError || !groupRows) {
+        setActionError({ id: rejectTarget.id, message: 'حدث خطأ أثناء جلب الحجوزات المرتبطة' });
+        setActionLoading(null); setRejectTarget(null); return;
+      }
+
+      const ids = groupRows.map((r) => r.id);
+      const { error: updateError } = await supabase
+        .from('booking_requests')
+        .update({ status: 'rejected', admin_note: reason || null })
+        .in('id', ids);
+
+      if (updateError) setActionError({ id: rejectTarget.id, message: 'حدث خطأ أثناء الرفض' });
+    }
+
+    setActionLoading(null);
+    setRejectTarget(null);
+    fetchBookings();
+  };
+
+  // ── Derived counts & filters ──────────────────────────────────────────────
   const pendingCount  = bookings.filter((b) => b.status === 'pending').length;
   const approvedCount = bookings.filter((b) => b.status === 'approved').length;
   const rejectedCount = bookings.filter((b) => b.status === 'rejected').length;
@@ -334,8 +624,25 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-4 sm:space-y-6 pb-12">
+      {/* Reject modal */}
       {rejectTarget && (
-        <RejectModal loading={actionLoading === rejectTarget} onConfirm={handleRejectConfirm} onCancel={() => setRejectTarget(null)} />
+        <RejectModal
+          booking={rejectTarget}
+          loading={actionLoading === rejectTarget.id}
+          onConfirm={handleRejectConfirm}
+          onCancel={() => setRejectTarget(null)}
+        />
+      )}
+
+      {/* Approve scope modal (recurring only) */}
+      {approveTarget && (
+        <ApproveScopeModal
+          booking={approveTarget}
+          loading={actionLoading === approveTarget.id}
+          scopeError={approveScopeError}
+          onConfirm={handleApproveScopeConfirm}
+          onCancel={() => { setApproveTarget(null); setApproveScopeError(''); setActionLoading(null); }}
+        />
       )}
 
       {/* Page header */}
@@ -355,7 +662,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Stats — 2 per row on mobile, 3 on sm+ */}
+      {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
         <StatCard icon={<Clock className="w-5 h-5 sm:w-7 sm:h-7" />}  colorKey="yellow" label="في الانتظار" value={pendingCount} />
         <StatCard icon={<Check className="w-5 h-5 sm:w-7 sm:h-7" />}  colorKey="green"  label="تمت الموافقة" value={approvedCount} />
@@ -395,7 +702,7 @@ export default function AdminDashboard() {
           {!loading && pendingBookings.length === 0 && <EmptyState text="لا توجد طلبات حجز في الانتظار" />}
           {!loading && pendingBookings.map((b) => (
             <BookingCard key={b.id} booking={b} actionLoading={actionLoading} actionError={actionError}
-              onApprove={handleApprove} onReject={setRejectTarget} showActions />
+              onApprove={handleApprove} onReject={handleReject} showActions />
           ))}
         </div>
       )}
