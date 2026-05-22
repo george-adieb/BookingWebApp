@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Calendar, Home, CheckCircle, Menu, X, Lock } from 'lucide-react';
+import { Calendar, Home, CheckCircle, Menu, X, Lock, Building2 } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 
@@ -9,10 +9,11 @@ export default function Header() {
   const location = useLocation();
 
   const navLinks = [
-    { name: 'الرئيسية', path: '/', icon: <Home className="w-5 h-5 flex-shrink-0" /> },
-    { name: 'احجز مكان', path: '/book', icon: <Calendar className="w-5 h-5 flex-shrink-0" /> },
-    { name: 'الأماكن المتاحة', path: '/availability', icon: <CheckCircle className="w-5 h-5 flex-shrink-0" /> },
-    { name: 'تسجيل دخول المسؤول', path: '/admin/login', icon: <Lock className="w-5 h-5 flex-shrink-0" /> },
+    { name: 'الرئيسية',            path: '/',                 icon: <Home className="w-5 h-5 flex-shrink-0" /> },
+    { name: 'حجز مكان في الكنيسة', path: '/book',             icon: <Calendar className="w-5 h-5 flex-shrink-0" /> },
+    { name: 'حجز بيت أبوتلات',     path: '/abo-talat-booking', icon: <Building2 className="w-5 h-5 flex-shrink-0" /> },
+    { name: 'الأماكن المتاحة',      path: '/availability',     icon: <CheckCircle className="w-5 h-5 flex-shrink-0" /> },
+    { name: 'تسجيل دخول المسؤول',  path: '/admin/login',      icon: <Lock className="w-5 h-5 flex-shrink-0" /> },
   ];
 
   const isActive = (path) => location.pathname === path;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, CheckCircle } from 'lucide-react';
+import { Calendar, CheckCircle, Building2 } from 'lucide-react';
 
 export default function HomePage() {
   return (
@@ -23,27 +23,37 @@ export default function HomePage() {
         </div>
 
         <p className="text-base sm:text-lg text-gray-600 mx-auto mt-2 leading-relaxed">
-          هذا النظام يتيح لك حجز القاعات والفصول في مباني الكنيسة المختلفة لخدماتك واجتماعاتك بكل سهولة ويسر.
+          هذا النظام يتيح لك حجز القاعات والفصول في مباني الكنيسة أو بيت أبوتلات لخدماتك واجتماعاتك بكل سهولة ويسر.
         </p>
       </div>
 
+      {/* Main booking CTAs */}
       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xl">
         <Link
           to="/book"
           className="flex-1 flex items-center justify-center gap-3 bg-[#8B0000] text-white px-6 py-4 rounded-xl text-lg font-bold hover:bg-red-900 transition-all shadow-lg hover:shadow-xl"
         >
           <Calendar className="w-6 h-6 flex-shrink-0" />
-          احجز مكان الآن
+          احجز مكان في الكنيسة
         </Link>
 
         <Link
-          to="/availability"
+          to="/abo-talat-booking"
           className="flex-1 flex items-center justify-center gap-3 bg-white text-[#8B0000] border-2 border-[#8B0000] px-6 py-4 rounded-xl text-lg font-bold hover:bg-red-50 transition-all shadow-md hover:shadow-lg"
         >
-          <CheckCircle className="w-6 h-6 flex-shrink-0" />
-          عرض الأماكن المتاحة
+          <Building2 className="w-6 h-6 flex-shrink-0" />
+          احجز بيت أبوتلات
         </Link>
       </div>
+
+      {/* Availability link */}
+      <Link
+        to="/availability"
+        className="flex items-center justify-center gap-2 text-[#8B0000] font-semibold hover:underline text-base"
+      >
+        <CheckCircle className="w-5 h-5" />
+        عرض الأماكن المتاحة في الكنيسة
+      </Link>
     </div>
   );
 }

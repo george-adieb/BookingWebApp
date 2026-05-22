@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import StatusBadge from '../components/StatusBadge';
@@ -6,8 +6,21 @@ import { formatArabic12 } from '../components/ArabicTimePicker';
 import {
   LogOut, Filter, Check, X, Calendar, MapPin, Clock, Phone,
   User, LayoutDashboard, Search, Loader2, AlertCircle,
-  FileText, StickyNote, List, Inbox, RefreshCw,
+  FileText, StickyNote, List, Inbox, RefreshCw, Building2,
+  UtensilsCrossed, Waves, Dumbbell,
 } from 'lucide-react';
+
+const FACILITY_LABELS = {
+  kitchen:    'مطبخ',
+  pool:       'حمام سباحة',
+  playground: 'ملعب',
+};
+
+const FACILITY_ICONS = {
+  kitchen:    UtensilsCrossed,
+  pool:       Waves,
+  playground: Dumbbell,
+};
 
 const formatPlace = (p) => p ? `${p.building} - ${p.floor} - ${p.name}` : '—';
 
@@ -57,7 +70,74 @@ function deriveRecurringDates(booking) {
 }
 
 // ── WhatsApp message builder ──────────────────────────────────────────────────
+function buildFacilitiesBlock(facilities) {
+  if (!Array.isArray(facilities) || facilities.length === 0) return '';
+  return '\nالمرافق:\n' + facilities.map((f) => `- ${FACILITY_LABELS[f] || f}`).join('\n');
+}
+
 function buildWaMessage(booking) {
+  // ── Abo Talat messages ──────────────────────────────────────────────────
+  if (booking.booking_category === 'abo_talat') {
+    const startAr = formatArabic12(booking.start_time);
+    const endAr   = formatArabic12(booking.end_time);
+    const facBlock = buildFacilitiesBlock(booking.facilities);
+    const periodAr = booking.check_out_period === 'morning' ? 'صباحًا' : 'مساءً';
+
+    if (booking.abo_talat_booking_type === 'one_day') {
+      if (booking.status === 'approved') {
+        return encodeURIComponent(
+          `مرحبًا، تم تأكيد حجز بيت أبوتلات في كنيسة مارجرجس سيدي بشر.\n\n` +
+          `تفاصيل الحجز:\n` +
+          `نوع الحجز: يوم واحد\n` +
+          `التاريخ: ${booking.booking_date}\n` +
+          `الوقت: من ${startAr} إلى ${endAr}` +
+          `${facBlock}\n\n` +
+          `ربنا يبارك خدمتك.`
+        );
+      }
+      if (booking.status === 'rejected') {
+        return encodeURIComponent(
+          `مرحبًا، نعتذر لعدم إمكانية تأكيد حجز بيت أبوتلات.\n\n` +
+          `تفاصيل الطلب:\n` +
+          `نوع الحجز: يوم واحد\n` +
+          `التاريخ: ${booking.booking_date}\n` +
+          `الوقت: من ${startAr} إلى ${endAr}` +
+          `${facBlock}\n\n` +
+          `برجاء التواصل مع المسؤول لمعرفة التفاصيل.`
+        );
+      }
+    }
+
+    if (booking.abo_talat_booking_type === 'retreat') {
+      if (booking.status === 'approved') {
+        return encodeURIComponent(
+          `مرحبًا، تم تأكيد حجز خلوة بيت أبوتلات في كنيسة مارجرجس سيدي بشر.\n\n` +
+          `تفاصيل الحجز:\n` +
+          `نوع الحجز: خلوة\n` +
+          `تاريخ الوصول: ${booking.check_in_date}\n` +
+          `تاريخ المغادرة: ${booking.check_out_date}\n` +
+          `وقت المغادرة: ${periodAr}` +
+          `${facBlock}\n\n` +
+          `ربنا يبارك خدمتك.`
+        );
+      }
+      if (booking.status === 'rejected') {
+        return encodeURIComponent(
+          `مرحبًا، نعتذر لعدم إمكانية تأكيد حجز خلوة بيت أبوتلات.\n\n` +
+          `تفاصيل الطلب:\n` +
+          `نوع الحجز: خلوة\n` +
+          `تاريخ الوصول: ${booking.check_in_date}\n` +
+          `تاريخ المغادرة: ${booking.check_out_date}\n` +
+          `وقت المغادرة: ${periodAr}` +
+          `${facBlock}\n\n` +
+          `برجاء التواصل مع المسؤول لمعرفة التفاصيل.`
+        );
+      }
+    }
+    return null;
+  }
+
+// ── Church place messages (original) ────────────────────────────────────────
   const placeLines = booking.places?.length
     ? booking.places.map((p) => `- ${formatPlace(p)}`).join('\n')
     : null;
@@ -269,6 +349,55 @@ function ApproveScopeModal({ booking, onConfirm, onCancel, loading, scopeError }
   );
 }
 
+// ── Abo Talat details block (shown inside BookingCard) ───────────────────────
+function AboTalatDetails({ booking }) {
+  const isRetreat = booking.abo_talat_booking_type === 'retreat';
+  const periodAr  = booking.check_out_period === 'morning' ? 'صباحًا' : 'مساءً';
+
+  return (
+    <div className="space-y-2">
+      {/* Badge */}
+      <span className="inline-flex items-center gap-1.5 bg-orange-100 text-orange-700 border border-orange-200 rounded-full px-2.5 py-0.5 text-xs font-bold">
+        <Building2 className="w-3 h-3" />بيت أبوتلات
+      </span>
+
+      {/* Type + dates */}
+      <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 text-xs text-orange-900 space-y-1">
+        <p><span className="font-bold">نوع الحجز:</span> {isRetreat ? 'خلوة' : 'يوم واحد'}</p>
+        {isRetreat ? (
+          <>
+            <p><span className="font-bold">تاريخ الوصول:</span> {formatDateAr(booking.check_in_date)}</p>
+            <p><span className="font-bold">تاريخ المغادرة:</span> {formatDateAr(booking.check_out_date)}</p>
+            <p><span className="font-bold">وقت المغادرة:</span> {periodAr}</p>
+          </>
+        ) : (
+          <>
+            <p><span className="font-bold">التاريخ:</span> {formatDateAr(booking.booking_date)}</p>
+            <p><span className="font-bold">الوقت:</span> {formatArabic12(booking.start_time)} — {formatArabic12(booking.end_time)}</p>
+          </>
+        )}
+      </div>
+
+      {/* Facilities */}
+      {Array.isArray(booking.facilities) && booking.facilities.length > 0 && (
+        <div>
+          <p className="text-xs font-bold text-gray-500 mb-1">المرافق المطلوبة</p>
+          <div className="flex flex-wrap gap-1.5">
+            {booking.facilities.map((f) => {
+              const Icon = FACILITY_ICONS[f];
+              return (
+                <span key={f} className="inline-flex items-center gap-1 bg-orange-50 border border-orange-200 text-orange-800 rounded-lg px-2 py-0.5 text-xs font-semibold">
+                  {Icon && <Icon className="w-3 h-3" />}{FACILITY_LABELS[f] || f}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Recurrence info badge / block ─────────────────────────────────────────────
 function RecurrenceBadge({ booking }) {
   if (!booking.recurrence_group_id) return null;
@@ -289,7 +418,7 @@ function RecurrenceBadge({ booking }) {
 }
 
 // ── Booking Card ──────────────────────────────────────────────────────────────
-function BookingCard({ booking, actionLoading, actionError, onApprove, onReject, showActions }) {
+function BookingCard({ booking, actionLoading, actionError, onApprove, onReject, showActions, hasConflict }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
       {/* Card body */}
@@ -303,6 +432,13 @@ function BookingCard({ booking, actionLoading, actionError, onApprove, onReject,
             <p className="font-bold text-gray-900 break-words">{booking.requester_name}</p>
             <p className="text-sm text-gray-500 break-words">{booking.service_name}</p>
             <RecurrenceBadge booking={booking} />
+            {hasConflict && (
+              <div className="mt-2">
+                <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 border border-red-200 rounded-full px-2.5 py-0.5 text-xs font-bold">
+                  <AlertCircle className="w-3 h-3" />يوجد تعارض في الموعد
+                </span>
+              </div>
+            )}
           </div>
           <div className="flex-shrink-0">
             <StatusBadge status={booking.status} />
@@ -320,32 +456,39 @@ function BookingCard({ booking, actionLoading, actionError, onApprove, onReject,
           </div>
         </div>
 
-        {/* Date & Time */}
-        <div>
-          <div className="flex items-center gap-1.5 text-gray-400 text-xs font-semibold mb-0.5">
-            <Calendar className="w-3.5 h-3.5 flex-shrink-0" />التاريخ والوقت
-          </div>
-          <p className="font-bold text-gray-900 text-sm">{booking.booking_date}</p>
-          <p className="text-sm text-gray-500">
-            {formatArabic12(booking.start_time)} — {formatArabic12(booking.end_time)}
-          </p>
-        </div>
+        {/* Booking-type-specific content */}
+        {booking.booking_category === 'abo_talat' ? (
+          <AboTalatDetails booking={booking} />
+        ) : (
+          <>
+            {/* Date & Time (church) */}
+            <div>
+              <div className="flex items-center gap-1.5 text-gray-400 text-xs font-semibold mb-0.5">
+                <Calendar className="w-3.5 h-3.5 flex-shrink-0" />التاريخ والوقت
+              </div>
+              <p className="font-bold text-gray-900 text-sm">{booking.booking_date}</p>
+              <p className="text-sm text-gray-500">
+                {formatArabic12(booking.start_time)} — {formatArabic12(booking.end_time)}
+              </p>
+            </div>
 
-        {/* Places */}
-        <div>
-          <div className="flex items-center gap-1.5 text-gray-400 text-xs font-semibold mb-1">
-            <MapPin className="w-3.5 h-3.5 flex-shrink-0" />الأماكن المطلوبة
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {booking.places?.length
-              ? booking.places.map((p) => (
-                  <span key={p.id} className="bg-red-50 text-[#8B0000] border border-red-100 rounded-lg px-2 py-0.5 text-xs font-semibold break-words">
-                    {formatPlace(p)}
-                  </span>
-                ))
-              : <span className="text-sm text-gray-400">لم يتم تحديد أماكن</span>}
-          </div>
-        </div>
+            {/* Places (church) */}
+            <div>
+              <div className="flex items-center gap-1.5 text-gray-400 text-xs font-semibold mb-1">
+                <MapPin className="w-3.5 h-3.5 flex-shrink-0" />الأماكن المطلوبة
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {booking.places?.length
+                  ? booking.places.map((p) => (
+                      <span key={p.id} className="bg-red-50 text-[#8B0000] border border-red-100 rounded-lg px-2 py-0.5 text-xs font-semibold break-words">
+                        {formatPlace(p)}
+                      </span>
+                    ))
+                  : <span className="text-sm text-gray-400">لم يتم تحديد أماكن</span>}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Notes */}
         {booking.notes && (
@@ -478,15 +621,60 @@ export default function AdminDashboard() {
 
   const doApproveSingle = async (booking) => {
     setActionLoading(booking.id);
+
+    // ── Abo Talat: use the Abo Talat availability RPC ───────────────────────
+    if (booking.booking_category === 'abo_talat') {
+      const rpcArgs = booking.abo_talat_booking_type === 'retreat'
+        ? {
+            p_booking_type:     'retreat',
+            p_check_in_date:    booking.check_in_date,
+            p_check_out_date:   booking.check_out_date,
+            p_check_out_period: booking.check_out_period,  // 'morning' | 'evening'
+            p_exclude_id:       booking.id,
+          }
+        : {
+            p_booking_type: 'one_day',
+            p_date:         booking.booking_date,
+            p_start_time:   booking.start_time,
+            p_end_time:     booking.end_time,
+            p_exclude_id:   booking.id,
+          };
+      const { data: avail, error: rpcErr } = await supabase.rpc('check_abo_talat_availability', rpcArgs);
+      if (rpcErr) { setActionError({ id: booking.id, message: 'حدث خطأ أثناء التحقق من التوفر' }); setActionLoading(null); return; }
+      if (avail === false) { setActionError({ id: booking.id, message: 'لا يمكن الموافقة لأن بيت أبوتلات أصبح محجوزًا في هذا الموعد' }); setActionLoading(null); return; }
+      const { error } = await supabase.from('booking_requests').update({ status: 'approved' }).eq('id', booking.id);
+      if (error) setActionError({ id: booking.id, message: 'حدث خطأ أثناء الموافقة' });
+      setActionLoading(null);
+      fetchBookings();
+      return;
+    }
+
+    // ── Church place: use check_place_availability (original logic) ───────────
     const placeItems = booking.booking_request_places || [];
+    const conflictingPlaces = [];
     for (const item of placeItems) {
       const { data, error } = await supabase.rpc('check_place_availability', {
         p_place_id: item.place_id, p_date: booking.booking_date,
         p_start_time: booking.start_time, p_end_time: booking.end_time, p_exclude_id: booking.id,
       });
       if (error) { setActionError({ id: booking.id, message: 'حدث خطأ أثناء التحقق من توفر الأماكن' }); setActionLoading(null); return; }
-      if (data === false) { setActionError({ id: booking.id, message: 'لا يمكن الموافقة لأن بعض الأماكن أصبحت محجوزة' }); setActionLoading(null); return; }
+      if (data === false) {
+        const placeDetails = booking.places.find(p => p.id === item.place_id);
+        if (placeDetails) {
+          conflictingPlaces.push(`${placeDetails.building} - ${placeDetails.floor} - ${placeDetails.name}`);
+        }
+      }
     }
+
+    if (conflictingPlaces.length > 0) {
+      setActionError({ 
+        id: booking.id, 
+        message: `لا يمكن الموافقة على هذا الطلب لأن المكان محجوز بالفعل في نفس الموعد أو في وقت متداخل\nالأماكن المتعارضة:\n${conflictingPlaces.map(p => `- ${p}`).join('\n')}` 
+      });
+      setActionLoading(null);
+      return;
+    }
+
     const { error } = await supabase.from('booking_requests').update({ status: 'approved' }).eq('id', booking.id);
     if (error) setActionError({ id: booking.id, message: 'حدث خطأ أثناء الموافقة' });
     setActionLoading(null);
@@ -517,6 +705,7 @@ export default function AdminDashboard() {
     }
 
     // Re-check availability for every occurrence
+    const conflictingOccurrences = [];
     for (const row of groupRows) {
       for (const item of (row.booking_request_places || [])) {
         const { data: avail, error: rpcError } = await supabase.rpc('check_place_availability', {
@@ -531,10 +720,17 @@ export default function AdminDashboard() {
           setActionLoading(null); return;
         }
         if (avail === false) {
-          setApproveScopeError('لا يمكن الموافقة على كل الحجوزات لأن بعض المواعيد أصبحت محجوزة');
-          setActionLoading(null); return;
+          const placeDetails = approveTarget.places.find(p => p.id === item.place_id);
+          const placeName = placeDetails ? `${placeDetails.building} - ${placeDetails.floor} - ${placeDetails.name}` : `مبنى غير معروف`;
+          conflictingOccurrences.push(`- ${row.booking_date} : ${placeName}`);
         }
       }
+    }
+
+    if (conflictingOccurrences.length > 0) {
+      setApproveScopeError(`لا يمكن الموافقة على كل الحجوزات المتكررة لأن بعض الأماكن محجوزة في مواعيد متداخلة\n${conflictingOccurrences.join('\n')}`);
+      setActionLoading(null);
+      return;
     }
 
     // All clear — bulk approve
@@ -622,6 +818,29 @@ export default function AdminDashboard() {
     return true;
   });
 
+  const churchConflicts = useMemo(() => {
+    const conflicts = new Set();
+    const approvedChurch = bookings.filter(b => b.status === 'approved' && b.booking_category !== 'abo_talat');
+    const pendingChurch = bookings.filter(b => b.status === 'pending' && b.booking_category !== 'abo_talat');
+
+    for (const pending of pendingChurch) {
+      const pPlaces = pending.places?.map(p => p.id) || [];
+      if (pPlaces.length === 0) continue;
+
+      const hasConflict = approvedChurch.some(approved => {
+        if (approved.booking_date !== pending.booking_date) return false;
+        if (!(pending.start_time < approved.end_time && pending.end_time > approved.start_time)) return false;
+        const aPlaces = approved.places?.map(p => p.id) || [];
+        return pPlaces.some(pid => aPlaces.includes(pid));
+      });
+
+      if (hasConflict) {
+        conflicts.add(pending.id);
+      }
+    }
+    return conflicts;
+  }, [bookings]);
+
   return (
     <div className="space-y-4 sm:space-y-6 pb-12">
       {/* Reject modal */}
@@ -702,7 +921,7 @@ export default function AdminDashboard() {
           {!loading && pendingBookings.length === 0 && <EmptyState text="لا توجد طلبات حجز في الانتظار" />}
           {!loading && pendingBookings.map((b) => (
             <BookingCard key={b.id} booking={b} actionLoading={actionLoading} actionError={actionError}
-              onApprove={handleApprove} onReject={handleReject} showActions />
+              onApprove={handleApprove} onReject={handleReject} showActions hasConflict={churchConflicts.has(b.id)} />
           ))}
         </div>
       )}

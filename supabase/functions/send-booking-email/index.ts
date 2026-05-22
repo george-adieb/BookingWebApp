@@ -13,7 +13,6 @@ const corsHeaders = {
 };
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -26,36 +25,40 @@ serve(async (req: Request) => {
       service_name,
       phone,
       booking_date,
-      start_time,        // "HH:mm" 24-hour
-      end_time,          // "HH:mm" 24-hour
-      places,            // Array of { building, floor, name }
+      start_time,
+      end_time,
+      places,
       notes,
-      // Recurrence fields (optional — absent for one-time bookings)
-      is_recurring,      // boolean
-      recurrence_type,   // 'weekly' | 'monthly'
-      recurrence_count,  // total number of occurrences
-      occurrence_dates,  // Array<string> — all YYYY-MM-DD dates
+      // Recurrence (church or abo_talat one_day)
+      is_recurring,
+      recurrence_type,
+      recurrence_count,
+      occurrence_dates,
+      // Abo Talat specific
+      booking_category,
+      abo_talat_booking_type,
+      check_in_date,
+      check_out_date,
+      check_out_period,
+      facilities,
     } = body;
 
-    // ── Arabic 12-hour formatter ────────────────────────────────────────────
+    // ── Helpers ─────────────────────────────────────────────────────────────
     function formatArabic12(hhmm: string): string {
       if (!hhmm || typeof hhmm !== "string") return hhmm || "—";
       const match = hhmm.match(/^(\d{1,2}):(\d{2})$/);
       if (!match) return hhmm;
       const h = parseInt(match[1], 10);
       const m = parseInt(match[2], 10);
-
       let hour12: number;
       let period: string;
       if (h === 0)       { hour12 = 12; period = "صباحًا"; }
       else if (h < 12)   { hour12 = h;  period = "صباحًا"; }
       else if (h === 12) { hour12 = 12; period = "مساءً";  }
       else               { hour12 = h - 12; period = "مساءً"; }
-
       return `${String(hour12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
     }
 
-    // ── Arabic date formatter ───────────────────────────────────────────────
     function formatDateAr(dateStr: string): string {
       if (!dateStr) return "—";
       try {
@@ -65,33 +68,118 @@ serve(async (req: Request) => {
       } catch { return dateStr; }
     }
 
-    // ── Format places list ──────────────────────────────────────────────────
-    const placesText = Array.isArray(places) && places.length > 0
-      ? places.map((p: { building: string; floor: string; name: string }) =>
-          `• ${p.building} - ${p.floor} - ${p.name}`
-        ).join("\n")
-      : "—";
+    const FACILITY_LABELS: Record<string, string> = {
+      kitchen:    "مطبخ",
+      pool:       "حمام سباحة",
+      playground: "ملعب",
+    };
 
-    const startFormatted = formatArabic12(start_time);
-    const endFormatted   = formatArabic12(end_time);
+    function formatFacilities(facs: string[] | undefined): string {
+      if (!Array.isArray(facs) || facs.length === 0) return "لا توجد";
+      return facs.map((f) => `• ${FACILITY_LABELS[f] || f}`).join("\n");
+    }
 
-    // ── Build email body ────────────────────────────────────────────────────
-    let emailBody: string;
+    function formatPlaces(ps: { building: string; floor: string; name: string }[] | undefined): string {
+      if (!Array.isArray(ps) || ps.length === 0) return "—";
+      return ps.map((p) => `• ${p.building} - ${p.floor} - ${p.name}`).join("\n");
+    }
+
+    // ── Build email ──────────────────────────────────────────────────────────
     let emailSubject: string;
+    let emailBody: string;
 
-    if (is_recurring && Array.isArray(occurrence_dates) && occurrence_dates.length > 0) {
-      // ── Recurring booking email ─────────────────────────────────────────
+    if (booking_category === "abo_talat") {
+      // ── Abo Talat email ────────────────────────────────────────────────────
+      emailSubject = "طلب حجز بيت أبوتلات جديد - كنيسة مارجرجس سيدي بشر";
+
+      const facText = formatFacilities(facilities);
+
+      if (abo_talat_booking_type === "retreat") {
+        const periodAr = check_out_period === "morning" ? "صباحًا" : "مساءً";
+        emailBody =
+`تم إرسال طلب حجز بيت أبوتلات جديد.
+
+الاسم: ${requester_name || "—"}
+الخدمة: ${service_name || "—"}
+رقم الهاتف: ${phone || "—"}
+
+نوع الحجز: خلوة
+تاريخ الوصول: ${formatDateAr(check_in_date)}
+تاريخ المغادرة: ${formatDateAr(check_out_date)}
+وقت المغادرة: ${periodAr}
+
+المرافق المطلوبة:
+${facText}
+
+الملاحظات: ${notes && notes.trim() ? notes.trim() : "لا توجد ملاحظات"}
+`;
+      } else {
+        // one_day (may be recurring)
+        const startFormatted = formatArabic12(start_time);
+        const endFormatted   = formatArabic12(end_time);
+        const isRec = is_recurring && Array.isArray(occurrence_dates) && occurrence_dates.length > 1;
+        const intervalLabel = recurrence_type === "weekly" ? "أسبوعيًا" : "شهريًا";
+        const firstDate = isRec ? formatDateAr(occurrence_dates[0]) : formatDateAr(booking_date);
+        const lastDate  = isRec ? formatDateAr(occurrence_dates[occurrence_dates.length - 1]) : null;
+
+        const datesText = isRec
+          ? occurrence_dates.map((d: string, i: number) => `${i + 1}. ${formatDateAr(d)}`).join("\n")
+          : null;
+
+        emailBody = isRec
+          ?
+`تم إرسال طلب حجز بيت أبوتلات متكرر جديد.
+
+الاسم: ${requester_name || "—"}
+الخدمة: ${service_name || "—"}
+رقم الهاتف: ${phone || "—"}
+
+نوع الحجز: يوم واحد (متكرر)
+التكرار: ${intervalLabel}
+عدد المرات: ${recurrence_count || occurrence_dates.length}
+من تاريخ: ${firstDate}
+إلى تاريخ: ${lastDate}
+الوقت: من ${startFormatted} إلى ${endFormatted}
+
+المواعيد:
+${datesText}
+
+المرافق المطلوبة:
+${facText}
+
+الملاحظات: ${notes && notes.trim() ? notes.trim() : "لا توجد ملاحظات"}
+`
+          :
+`تم إرسال طلب حجز بيت أبوتلات جديد.
+
+الاسم: ${requester_name || "—"}
+الخدمة: ${service_name || "—"}
+رقم الهاتف: ${phone || "—"}
+
+نوع الحجز: يوم واحد
+التاريخ: ${firstDate}
+الوقت: من ${startFormatted} إلى ${endFormatted}
+
+المرافق المطلوبة:
+${facText}
+
+الملاحظات: ${notes && notes.trim() ? notes.trim() : "لا توجد ملاحظات"}
+`;
+      }
+
+    } else if (is_recurring && Array.isArray(occurrence_dates) && occurrence_dates.length > 0) {
+      // ── Church recurring email (unchanged logic) ──────────────────────────
       const intervalLabel = recurrence_type === "weekly" ? "أسبوعيًا" : "شهريًا";
       const firstDate = formatDateAr(occurrence_dates[0]);
       const lastDate  = formatDateAr(occurrence_dates[occurrence_dates.length - 1]);
       const totalCount = recurrence_count ?? occurrence_dates.length;
-
       const datesText = occurrence_dates
         .map((d: string, i: number) => `${i + 1}. ${formatDateAr(d)}`)
         .join("\n");
+      const startFormatted = formatArabic12(start_time);
+      const endFormatted   = formatArabic12(end_time);
 
       emailSubject = "طلب حجز متكرر جديد - كنيسة مارجرجس سيدي بشر";
-
       emailBody =
 `تم إرسال طلب حجز متكرر جديد.
 
@@ -110,14 +198,16 @@ serve(async (req: Request) => {
 ${datesText}
 
 الأماكن المطلوبة:
-${placesText}
+${formatPlaces(places)}
 
 الملاحظات: ${notes && notes.trim() ? notes.trim() : "لا توجد ملاحظات"}
 `;
     } else {
-      // ── One-time booking email (unchanged format) ───────────────────────
-      emailSubject = "طلب حجز جديد - كنيسة مارجرجس سيدي بشر";
+      // ── Church one-time email (original format — unchanged) ───────────────
+      const startFormatted = formatArabic12(start_time);
+      const endFormatted   = formatArabic12(end_time);
 
+      emailSubject = "طلب حجز جديد - كنيسة مارجرجس سيدي بشر";
       emailBody =
 `تم إرسال طلب حجز جديد.
 
@@ -128,7 +218,7 @@ ${placesText}
 الوقت: من ${startFormatted} إلى ${endFormatted}
 
 الأماكن المطلوبة:
-${placesText}
+${formatPlaces(places)}
 
 الملاحظات: ${notes && notes.trim() ? notes.trim() : "لا توجد ملاحظات"}
 `;
@@ -139,7 +229,7 @@ ${placesText}
     const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD");
 
     if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
-      console.error("[send-booking-email] GMAIL_USER or GMAIL_APP_PASSWORD secret is not set.");
+      console.error("[send-booking-email] SMTP credentials not configured.");
       return new Response(
         JSON.stringify({ ok: false, error: "SMTP credentials not configured" }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -150,29 +240,21 @@ ${placesText}
       host: "smtp.gmail.com",
       port: 465,
       secure: true,
-      auth: {
-        user: GMAIL_USER,
-        pass: GMAIL_APP_PASSWORD,
-      },
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
     });
 
     try {
       const info = await transporter.sendMail({
-        from:    GMAIL_USER,
-        to:      ADMIN_EMAIL,
-        subject: emailSubject,
-        text:    emailBody,
+        from: GMAIL_USER, to: ADMIN_EMAIL,
+        subject: emailSubject, text: emailBody,
       });
-
-      console.log("[send-booking-email] Email sent successfully:", info.messageId);
-
+      console.log("[send-booking-email] Email sent:", info.messageId);
       return new Response(
         JSON.stringify({ ok: true, emailId: info.messageId }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     } catch (smtpError) {
       console.error("[send-booking-email] SMTP error:", smtpError);
-      // Still return 200 — booking already succeeded, email failure is non-critical
       return new Response(
         JSON.stringify({ ok: false, error: "SMTP error", details: String(smtpError) }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -181,7 +263,6 @@ ${placesText}
 
   } catch (err) {
     console.error("[send-booking-email] Unexpected error:", err);
-    // Return 200 to avoid blocking the booking flow
     return new Response(
       JSON.stringify({ ok: false, error: String(err) }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

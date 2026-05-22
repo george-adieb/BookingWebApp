@@ -6,6 +6,7 @@ import BookingRequestPage from './pages/BookingRequestPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import AdminDashboard from './pages/AdminDashboard';
+import AboTalatBookingPage from './pages/AboTalatBookingPage';
 
 const WHATSAPP_NUMBER = '201223932191';
 const WHATSAPP_URL    = `https://wa.me/${WHATSAPP_NUMBER}`;
@@ -48,6 +49,7 @@ function App() {
             <Route path="/availability" element={<AvailabilityPage />} />
             <Route path="/admin/login" element={<AdminLoginPage />} />
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/abo-talat-booking" element={<AboTalatBookingPage />} />
           </Routes>
         </main>
         <WhatsAppButton />
