@@ -151,8 +151,8 @@ export default function BookingRequestPage() {
         setError('يجب تحديد تاريخ نهاية التكرار');
         return;
       }
-      if (repeatEndType === 'date' && repeatUntil <= formData.booking_date) {
-        setError('تاريخ نهاية التكرار يجب أن يكون بعد تاريخ الحجز');
+      if (repeatEndType === 'date' && repeatUntil < formData.booking_date) {
+        setError('تاريخ نهاية التكرار يجب أن يكون بعد أو نفس تاريخ أول حجز');
         return;
       }
     }
@@ -619,7 +619,7 @@ export default function BookingRequestPage() {
                         value={repeatCount}
                         onChange={(e) => setRepeatCount(Math.max(2, Math.min(52, parseInt(e.target.value) || 2)))}
                         disabled={repeatEndType !== 'count'}
-                        onClick={(e) => { e.preventDefault(); setRepeatEndType('count'); }}
+                        onClick={(e) => { setRepeatEndType('count'); }}
                         className="w-20 px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm font-bold text-center disabled:opacity-40"
                         dir="ltr"
                       />
@@ -640,7 +640,10 @@ export default function BookingRequestPage() {
                         min={formData.booking_date || undefined}
                         onChange={(e) => setRepeatUntil(e.target.value)}
                         disabled={repeatEndType !== 'date'}
-                        onClick={(e) => { e.preventDefault(); setRepeatEndType('date'); }}
+                        onClick={(e) => { 
+                          setRepeatEndType('date'); 
+                          try { if (e.target.showPicker) e.target.showPicker(); } catch (err) {} 
+                        }}
                         className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm disabled:opacity-40"
                       />
                     </label>

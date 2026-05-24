@@ -170,8 +170,8 @@ export default function AboTalatBookingPage() {
         if (repeatEndType === 'date' && !repeatUntil) {
           setError('يجب تحديد تاريخ نهاية التكرار'); return;
         }
-        if (repeatEndType === 'date' && repeatUntil <= bookingDate) {
-          setError('تاريخ نهاية التكرار يجب أن يكون بعد تاريخ الحجز'); return;
+        if (repeatEndType === 'date' && repeatUntil < bookingDate) {
+          setError('تاريخ نهاية التكرار يجب أن يكون بعد أو نفس تاريخ أول حجز'); return;
         }
       }
     } else {
@@ -577,7 +577,7 @@ export default function AboTalatBookingPage() {
                               <input type="number" min="2" max="52" value={repeatCount}
                                 onChange={(e) => setRepeatCount(Math.max(2, Math.min(52, parseInt(e.target.value) || 2)))}
                                 disabled={repeatEndType !== 'count'}
-                                onClick={(ev) => { ev.preventDefault(); setRepeatEndType('count'); }}
+                                onClick={(ev) => { setRepeatEndType('count'); }}
                                 className="w-20 px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm font-bold text-center disabled:opacity-40"
                                 dir="ltr" />
                               <span className="text-sm text-gray-500">مرة</span>
@@ -592,7 +592,10 @@ export default function AboTalatBookingPage() {
                                 min={bookingDate || undefined}
                                 onChange={(e) => setRepeatUntil(e.target.value)}
                                 disabled={repeatEndType !== 'date'}
-                                onClick={(ev) => { ev.preventDefault(); setRepeatEndType('date'); }}
+                                onClick={(ev) => { 
+                                  setRepeatEndType('date'); 
+                                  try { if (ev.target.showPicker) ev.target.showPicker(); } catch (e) {} 
+                                }}
                                 className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm disabled:opacity-40" />
                             </label>
                           </div>
