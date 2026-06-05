@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Send, CheckCircle2, AlertCircle, Loader2, RefreshCw, Calendar } from 'lucide-react';
+import { Send, CheckCircle2, AlertCircle, Loader2, RefreshCw, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import ArabicTimePicker, { formatArabic12 } from '../components/ArabicTimePicker';
 
 // ── Email notification (fire-and-forget) ─────────────────────────────────────
@@ -73,6 +73,67 @@ function formatDateAr(dateStr) {
   } catch { return dateStr; }
 }
 
+// ── Availability status config ────────────────────────────────────────────────
+const STATUS_CONFIG = {
+  available: {
+    label:      'متاح',
+    badgeCls:   'bg-green-100 text-green-800 border-green-300',
+    cardCls:    'border-green-300 bg-green-50',
+    dot:        'bg-green-500',
+  },
+  pending: {
+    label:      'يوجد طلب قيد الموافقة',
+    badgeCls:   'bg-yellow-100 text-yellow-800 border-yellow-300',
+    cardCls:    'border-yellow-400 bg-yellow-50',
+    dot:        'bg-yellow-500',
+  },
+  booked: {
+    label:      'محجوز',
+    badgeCls:   'bg-red-100 text-red-700 border-red-300',
+    cardCls:    'border-red-400 bg-red-50',
+    dot:        'bg-red-500',
+  },
+};
+
+// ── Conflict detail expander inside a place card ──────────────────────────────
+function ConflictDetails({ conflicts }) {
+  const [open, setOpen] = useState(false);
+  if (!conflicts || conflicts.length === 0) return null;
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        className="flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-700 transition-colors"
+      >
+        {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        {open ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5 border-t border-gray-200 pt-1.5">
+          {conflicts.map((c, i) => (
+            <div key={i} className="text-xs text-gray-600 leading-snug space-y-0.5">
+              <p>
+                <span className="font-bold">📅 التاريخ:</span>{' '}
+                {formatDateAr(c.date)}
+              </p>
+              <p>
+                <span className="font-bold">⏰ الوقت:</span>{' '}
+                {formatArabic12(c.start_time)} — {formatArabic12(c.end_time)}
+              </p>
+              <p>
+                <span className="font-bold">📋 الخدمة:</span>{' '}
+                {c.service_name}
+              </p>
+              {i < conflicts.length - 1 && <hr className="border-gray-200 my-1" />}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BookingRequestPage() {
   const [searchParams] = useSearchParams();
   const preSelectedPlaceId = searchParams.get('placeId') || '';
@@ -107,6 +168,13 @@ export default function BookingRequestPage() {
   const [successCount, setSuccessCount]             = useState(0);
   const [isSubmitting, setIsSubmitting]             = useState(false);
 
+  // ── Availability state ─────────────────────────────────────────────────────
+  const [placeAvailability, setPlaceAvailability] = useState({}); // { [placeId]: { status, conflicts } }
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [autoRemovedBanner, setAutoRemovedBanner] = useState(false);
+  const [pendingWarningPlaceId, setPendingWarningPlaceId] = useState(null);
+  const availabilityAbortRef = useRef(null); // to cancel in-flight checks
+
   useEffect(() => {
     supabase.from('places').select('id, building, floor, name').eq('is_active', true)
       .order('building').then(({ data, error: e }) => {
@@ -117,12 +185,185 @@ export default function BookingRequestPage() {
 
   const buildings = [...new Set(places.map((p) => p.building))];
 
+  // ── Availability fetching ──────────────────────────────────────────────────
+  const fetchAvailability = useCallback(async (
+    currentPlaces,
+    bookingDate,
+    startTime,
+    endTime,
+    isRecurring,
+    interval,
+    endType,
+    count,
+    until,
+  ) => {
+    if (!bookingDate || !startTime || !endTime || startTime >= endTime || currentPlaces.length === 0) {
+      setPlaceAvailability({});
+      return;
+    }
+
+    // Cancel any in-flight check
+    if (availabilityAbortRef.current) {
+      availabilityAbortRef.current.cancelled = true;
+    }
+    const token = { cancelled: false };
+    availabilityAbortRef.current = token;
+
+    setAvailabilityLoading(true);
+
+    // Build the list of dates to check
+    let dates;
+    if (!isRecurring) {
+      dates = [bookingDate];
+    } else {
+      dates = generateOccurrenceDates(
+        bookingDate, interval, endType,
+        endType === 'count' ? count : 999,
+        until,
+      );
+    }
+
+    const newAvailability = {};
+
+    for (const place of currentPlaces) {
+      if (token.cancelled) break;
+
+      // For recurring: check all dates and aggregate
+      let aggregatedStatus = 'available';
+      const allConflicts = [];
+
+      for (const date of dates) {
+        if (token.cancelled) break;
+
+        // RPC name: get_place_booking_status
+        // Returns: array of rows, each with { status: 'approved'|'pending', ... }
+        const { data, error: rpcErr } = await supabase.rpc('get_place_booking_status', {
+          p_place_id:   place.id,
+          p_date:       date,
+          p_start_time: startTime,
+          p_end_time:   endTime,
+          p_exclude_id: null,
+        });
+
+        console.log('Place status check', {
+          placeId:     place.id,
+          placeName:   place.name,
+          bookingDate: date,
+          startTime,
+          endTime,
+          data,
+          error:       rpcErr,
+        });
+
+        if (token.cancelled) break;
+        if (rpcErr) {
+          console.warn('[availability] RPC error for place', place.id, rpcErr);
+          continue;
+        }
+
+        // data is an array of conflicting booking rows.
+        // Each row has a `status` field: 'approved' or 'pending'.
+        const rows = Array.isArray(data) ? data : [];
+
+        // Collect conflict details from rows
+        for (const row of rows) {
+          allConflicts.push({
+            date:           date,
+            status:         row.status,
+            requester_name: row.requester_name,
+            service_name:   row.service_name,
+            start_time:     row.start_time,
+            end_time:       row.end_time,
+          });
+        }
+
+        // Priority: any 'approved' row → booked; any 'pending' row → pending
+        const hasApproved = rows.some((r) => r.status === 'approved');
+        const hasPending  = rows.some((r) => r.status === 'pending');
+
+        if (hasApproved) {
+          aggregatedStatus = 'booked';
+        } else if (hasPending && aggregatedStatus === 'available') {
+          aggregatedStatus = 'pending';
+        }
+      }
+
+      if (!token.cancelled) {
+        newAvailability[place.id] = { status: aggregatedStatus, conflicts: allConflicts };
+      }
+    }
+
+    if (!token.cancelled) {
+      setPlaceAvailability(newAvailability);
+      setAvailabilityLoading(false);
+    }
+  }, []);
+
+  // ── Trigger availability refresh when date/time/recurrence changes ─────────
+  useEffect(() => {
+    if (placesLoading || places.length === 0) return;
+
+    fetchAvailability(
+      places,
+      formData.booking_date,
+      formData.start_time,
+      formData.end_time,
+      recurrenceType === 'recurring',
+      repeatInterval,
+      repeatEndType,
+      repeatCount,
+      repeatUntil,
+    );
+  }, [
+    places,
+    placesLoading,
+    formData.booking_date,
+    formData.start_time,
+    formData.end_time,
+    recurrenceType,
+    repeatInterval,
+    repeatEndType,
+    repeatCount,
+    repeatUntil,
+    fetchAvailability,
+  ]);
+
+  // ── Auto-deselect places that became booked ────────────────────────────────
+  useEffect(() => {
+    if (Object.keys(placeAvailability).length === 0) return;
+
+    const bookedSelectedIds = formData.place_ids.filter(
+      (id) => placeAvailability[id]?.status === 'booked',
+    );
+
+    if (bookedSelectedIds.length > 0) {
+      setFormData((prev) => ({
+        ...prev,
+        place_ids: prev.place_ids.filter((id) => !bookedSelectedIds.includes(id)),
+      }));
+      setAutoRemovedBanner(true);
+      // Hide banner after 6 seconds
+      setTimeout(() => setAutoRemovedBanner(false), 6000);
+    }
+  }, [placeAvailability]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError(''); setUnavailableDetails([]);
   };
 
   const handlePlaceToggle = (placeId) => {
+    const status = placeAvailability[placeId]?.status;
+
+    // Booked places cannot be selected
+    if (status === 'booked') return;
+
+    // Pending places: allow selection but show warning
+    if (status === 'pending' && !formData.place_ids.includes(placeId)) {
+      setPendingWarningPlaceId(placeId);
+      setTimeout(() => setPendingWarningPlaceId(null), 5000);
+    }
+
     setFormData((prev) => ({
       ...prev,
       place_ids: prev.place_ids.includes(placeId)
@@ -379,6 +620,9 @@ export default function BookingRequestPage() {
     setRepeatEndType('count');
     setRepeatCount(4);
     setRepeatUntil('');
+    setPlaceAvailability({});
+    setAutoRemovedBanner(false);
+    setPendingWarningPlaceId(null);
   }
 
   // ── Success screen ────────────────────────────────────────────────────────
@@ -406,6 +650,14 @@ export default function BookingRequestPage() {
 
   // ── Form ──────────────────────────────────────────────────────────────────
   const isRecurring = recurrenceType === 'recurring';
+
+  // Whether the availability panel should show (date + valid times set)
+  const canCheckAvailability = !!(
+    formData.booking_date &&
+    formData.start_time &&
+    formData.end_time &&
+    formData.start_time < formData.end_time
+  );
 
   return (
     <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -438,6 +690,14 @@ export default function BookingRequestPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Auto-removed banner */}
+        {autoRemovedBanner && (
+          <div className="flex items-start gap-3 bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded-lg text-sm font-semibold">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-orange-600" />
+            تم إزالة بعض الأماكن لأنها أصبحت محجوزة
           </div>
         )}
 
@@ -698,11 +958,39 @@ export default function BookingRequestPage() {
         <div className="space-y-3">
           <div className="flex flex-wrap justify-between items-center gap-2">
             <label className="block text-base sm:text-lg font-bold text-[#8B0000]">الأماكن المطلوبة</label>
-            <span className="bg-red-50 text-[#8B0000] px-3 py-1 rounded-full text-sm font-bold border border-red-100 flex-shrink-0">
-              عدد الأماكن: {formData.place_ids.length}
-            </span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Availability loading indicator */}
+              {availabilityLoading && canCheckAvailability && (
+                <span className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#8B0000]" />
+                  جاري التحقق من الإتاحة...
+                </span>
+              )}
+              <span className="bg-red-50 text-[#8B0000] px-3 py-1 rounded-full text-sm font-bold border border-red-100">
+                عدد الأماكن: {formData.place_ids.length}
+              </span>
+            </div>
           </div>
-          <div className="bg-gray-50 p-3 sm:p-4 rounded-xl border border-gray-200 max-h-[380px] overflow-y-auto space-y-5">
+
+          {/* Availability legend */}
+          {canCheckAvailability && !availabilityLoading && Object.keys(placeAvailability).length > 0 && (
+            <div className="flex flex-wrap gap-3 text-xs font-semibold">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span>
+                <span className="text-gray-600">متاح</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block"></span>
+                <span className="text-gray-600">يوجد طلب قيد الموافقة</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
+                <span className="text-gray-600">محجوز</span>
+              </span>
+            </div>
+          )}
+
+          <div className="bg-gray-50 p-3 sm:p-4 rounded-xl border border-gray-200 max-h-[420px] overflow-y-auto space-y-5">
             {placesLoading ? (
               <div className="flex items-center justify-center py-8 gap-3 text-gray-500">
                 <Loader2 className="w-6 h-6 animate-spin text-[#8B0000]" />
@@ -716,28 +1004,73 @@ export default function BookingRequestPage() {
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                     {places.filter((p) => p.building === building).map((place) => {
-                      const selected = formData.place_ids.includes(place.id);
+                      const selected   = formData.place_ids.includes(place.id);
+                      const avail      = placeAvailability[place.id];
+                      const status     = avail?.status || 'available';
+                      const conflicts  = avail?.conflicts || [];
+                      const isBooked   = status === 'booked';
+                      const isPending  = status === 'pending';
+                      const showAvailBadge = canCheckAvailability && avail;
+                      const cfg        = STATUS_CONFIG[status];
+                      const showPendingWarn = pendingWarningPlaceId === place.id;
+
+                      // Card border/bg: selected overrides only when not booked/pending
+                      let cardCls = 'bg-white border-gray-200 hover:border-[#8B0000]';
+                      if (isBooked) {
+                        cardCls = 'bg-red-50 border-red-300 opacity-70 cursor-not-allowed';
+                      } else if (isPending && showAvailBadge) {
+                        cardCls = selected
+                          ? 'bg-yellow-50 border-yellow-400'
+                          : 'bg-yellow-50 border-yellow-300 hover:border-yellow-500';
+                      } else if (selected) {
+                        cardCls = 'bg-red-50 border-[#8B0000]';
+                      } else if (status === 'available' && showAvailBadge) {
+                        cardCls = selected
+                          ? 'bg-green-50 border-green-500'
+                          : 'bg-white border-green-300 hover:border-green-500';
+                      }
+
                       return (
                         <label
                           key={place.id}
-                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors min-h-[56px] ${
-                            selected
-                              ? 'bg-red-50 border-[#8B0000]'
-                              : 'bg-white border-gray-200 hover:border-[#8B0000]'
-                          }`}
+                          className={`flex flex-col gap-2 p-3 rounded-lg border-2 transition-colors min-h-[64px] ${cardCls} ${isBooked ? '' : 'cursor-pointer'}`}
+                          onClick={isBooked ? (e) => e.preventDefault() : undefined}
                         >
-                          <input
-                            type="checkbox"
-                            className="mt-1 w-5 h-5 flex-shrink-0 text-[#8B0000] rounded focus:ring-[#8B0000]"
-                            checked={selected}
-                            onChange={() => handlePlaceToggle(place.id)}
-                          />
-                          <div className="min-w-0">
-                            <p className={`font-bold text-sm leading-tight ${selected ? 'text-[#8B0000]' : 'text-gray-900'}`}>
-                              {place.floor}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-0.5 break-words">{place.name}</p>
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              className="mt-1 w-5 h-5 flex-shrink-0 text-[#8B0000] rounded focus:ring-[#8B0000] disabled:opacity-50"
+                              checked={selected}
+                              disabled={isBooked}
+                              onChange={() => handlePlaceToggle(place.id)}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className={`font-bold text-sm leading-tight ${selected && !isBooked ? 'text-[#8B0000]' : isBooked ? 'text-red-700' : 'text-gray-900'}`}>
+                                {place.floor}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-0.5 break-words">{place.name}</p>
+
+                              {/* Availability badge */}
+                              {showAvailBadge && (
+                                <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-xs font-bold border ${cfg.badgeCls}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`}></span>
+                                  {cfg.label}
+                                </span>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Conflict details expander (yellow or red) */}
+                          {showAvailBadge && conflicts.length > 0 && (
+                            <ConflictDetails conflicts={conflicts} />
+                          )}
+
+                          {/* Pending warning (shown when user clicks a yellow card) */}
+                          {showPendingWarn && (
+                            <div className="text-xs text-yellow-800 bg-yellow-100 border border-yellow-300 rounded-lg px-2 py-1.5 font-semibold leading-snug">
+                              يوجد طلب سابق على هذا المكان في نفس الموعد ولم تتم الموافقة عليه بعد
+                            </div>
+                          )}
                         </label>
                       );
                     })}
