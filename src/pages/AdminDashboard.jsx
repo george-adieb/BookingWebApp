@@ -7,7 +7,7 @@ import {
   LogOut, Filter, Check, X, Calendar, MapPin, Clock, Phone,
   User, LayoutDashboard, Search, Loader2, AlertCircle,
   FileText, StickyNote, List, Inbox, RefreshCw, Building2,
-  UtensilsCrossed, Waves, Dumbbell,
+  UtensilsCrossed, Waves, Dumbbell, XCircle,
 } from 'lucide-react';
 
 const FACILITY_LABELS = {
@@ -902,18 +902,64 @@ export default function AdminDashboard() {
       {activeTab === 'pending' && (
         <div className="space-y-4">
           <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-100">
-            <div className="flex items-center gap-2 mb-3 text-[#8B0000] font-bold text-sm">
-              <Filter className="w-4 h-4" />تصفية
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
-                <input type="text" placeholder="بحث بالاسم، الخدمة، أو المكان..." value={pf.search}
-                  onChange={(e) => setPf({ ...pf, search: e.target.value })}
-                  className="w-full pr-9 pl-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm" />
+            {/* Filter header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-[#8B0000] font-bold text-sm">
+                <Filter className="w-4 h-4" />
+                تصـفية الطلبات
               </div>
-              <input type="date" value={pf.date} onChange={(e) => setPf({ ...pf, date: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm" />
+              {(pf.search || pf.date) && (
+                <button
+                  type="button"
+                  onClick={() => setPf({ search: '', date: '' })}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-red-600 bg-gray-100 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  مسح التصفية
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Search field */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-500">البحث بالاسم أو رقم الهاتف</label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="ابحث هنا..."
+                    value={pf.search}
+                    onChange={(e) => setPf({ ...pf, search: e.target.value })}
+                    className="w-full h-12 pr-9 pl-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm bg-gray-50 focus:bg-white transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Date field */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-500">التاريخ</label>
+                <div
+                  className="relative cursor-pointer"
+                  onClick={(e) => {
+                    const inp = e.currentTarget.querySelector('input[type="date"]');
+                    if (inp) { try { if (inp.showPicker) inp.showPicker(); } catch (_) { inp.focus(); } }
+                  }}
+                >
+                  <Calendar className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="date"
+                    value={pf.date}
+                    onChange={(e) => setPf({ ...pf, date: e.target.value })}
+                    className="w-full h-12 pr-9 pl-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm bg-gray-50 focus:bg-white transition-colors cursor-pointer appearance-none"
+                  />
+                  {!pf.date && (
+                    <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none select-none">
+                      اختر التاريخ
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -930,33 +976,104 @@ export default function AdminDashboard() {
       {activeTab === 'all' && (
         <div className="space-y-4">
           <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-100">
-            <div className="flex items-center gap-2 mb-3 text-[#8B0000] font-bold text-sm">
-              <Filter className="w-4 h-4" />تصفية
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
-                <input type="text" placeholder="بحث بالاسم أو رقم الهاتف..." value={af.search}
-                  onChange={(e) => setAf({ ...af, search: e.target.value })}
-                  className="w-full pr-9 pl-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm" />
+            {/* Filter header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-[#8B0000] font-bold text-sm">
+                <Filter className="w-4 h-4" />
+                تصـفية الطلبات
               </div>
-              <input type="text" placeholder="الخدمة أو الاجتماع..." value={af.service}
-                onChange={(e) => setAf({ ...af, service: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm" />
-              <input type="date" value={af.date} onChange={(e) => setAf({ ...af, date: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm" />
-              <select value={af.status} onChange={(e) => setAf({ ...af, status: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm">
-                <option value="">جميع الحالات</option>
-                <option value="pending">في انتظار الموافقة</option>
-                <option value="approved">تمت الموافقة</option>
-                <option value="rejected">مرفوض</option>
-              </select>
-              <select value={af.building} onChange={(e) => setAf({ ...af, building: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm">
-                <option value="">جميع المباني</option>
-                {allBuildings.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
+              {(af.search || af.date || af.status || af.building || af.service) && (
+                <button
+                  type="button"
+                  onClick={() => setAf({ search: '', date: '', status: '', building: '', service: '' })}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-red-600 bg-gray-100 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  مسح التصفية
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* Name / phone search */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-500">البحث بالاسم أو رقم الهاتف</label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="ابحث هنا..."
+                    value={af.search}
+                    onChange={(e) => setAf({ ...af, search: e.target.value })}
+                    className="w-full h-12 pr-9 pl-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm bg-gray-50 focus:bg-white transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Service search */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-500">الخدمة أو الاجتماع</label>
+                <input
+                  type="text"
+                  placeholder="اسم الخدمة..."
+                  value={af.service}
+                  onChange={(e) => setAf({ ...af, service: e.target.value })}
+                  className="w-full h-12 px-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm bg-gray-50 focus:bg-white transition-colors"
+                />
+              </div>
+
+              {/* Date field */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-500">التاريخ</label>
+                <div
+                  className="relative cursor-pointer"
+                  onClick={(e) => {
+                    const inp = e.currentTarget.querySelector('input[type="date"]');
+                    if (inp) { try { if (inp.showPicker) inp.showPicker(); } catch (_) { inp.focus(); } }
+                  }}
+                >
+                  <Calendar className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="date"
+                    value={af.date}
+                    onChange={(e) => setAf({ ...af, date: e.target.value })}
+                    className="w-full h-12 pr-9 pl-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm bg-gray-50 focus:bg-white transition-colors cursor-pointer appearance-none"
+                  />
+                  {!af.date && (
+                    <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none select-none">
+                      اختر التاريخ
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Status filter */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-500">الحالة</label>
+                <select
+                  value={af.status}
+                  onChange={(e) => setAf({ ...af, status: e.target.value })}
+                  className="w-full h-12 px-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm bg-gray-50 focus:bg-white transition-colors"
+                >
+                  <option value="">جميع الحالات</option>
+                  <option value="pending">في انتظار الموافقة</option>
+                  <option value="approved">تمت الموافقة</option>
+                  <option value="rejected">مرفوض</option>
+                </select>
+              </div>
+
+              {/* Building filter */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-500">المبنى</label>
+                <select
+                  value={af.building}
+                  onChange={(e) => setAf({ ...af, building: e.target.value })}
+                  className="w-full h-12 px-4 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#8B0000] outline-none text-sm bg-gray-50 focus:bg-white transition-colors"
+                >
+                  <option value="">جميع المباني</option>
+                  {allBuildings.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
             </div>
           </div>
 
