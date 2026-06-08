@@ -8,6 +8,29 @@ import { formatArabic12 } from './ArabicTimePicker';
 
 // ── Constants & Formatter Helpers ──────────────────────────────────────────────
 const WEEKDAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const WEEKDAYS_MINI = ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'];
+
+const getShortEventLabel = (ev) => {
+  const b = ev.booking;
+  if (ev.type === 'abo_talat_retreat') {
+    return `خلوة - ${b.service_name || ''}`;
+  }
+  if (ev.type === 'abo_talat_one_day') {
+    return `بيت - ${b.service_name || ''}`;
+  }
+  
+  let timeStr = '';
+  if (b.start_time) {
+    const match = b.start_time.match(/^(\d{1,2}):(\d{2})$/);
+    if (match) {
+      let h = parseInt(match[1], 10);
+      let period = h >= 12 ? 'م' : 'ص';
+      let h12 = h === 0 ? 12 : (h > 12 ? h - 12 : h);
+      timeStr = `${h12}${period} `;
+    }
+  }
+  return `${timeStr}${b.service_name || ''}`;
+};
 
 const FACILITY_LABELS = {
   kitchen:    'مطبخ',
@@ -465,6 +488,141 @@ function CalendarBookingItem({ ev, onClick, hasConflict }) {
   );
 }
 
+// ── Sub-component: Compact Action Card for Selected Day list below calendar ─────
+function CompactActionCard({ ev, onApprove, onReject, onDelete, actionLoading, actionError, hasConflict }) {
+  const b = ev.booking;
+  const statusColor = STATUS_COLORS[b.status] || STATUS_COLORS.pending;
+  const startAr = formatArabic12(b.start_time);
+  const endAr = formatArabic12(b.end_time);
+  const isRecurring = !!b.recurrence_group_id;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-4 space-y-3 relative">
+      <div className={`absolute right-0 top-0 bottom-0 w-1 ${
+        b.status === 'approved' ? 'bg-green-500' : b.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
+      }`} />
+      
+      <div className="pr-1.5 space-y-3">
+        {/* Header Name & Status */}
+        <div className="flex justify-between items-start gap-2">
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+              {ev.type === 'abo_talat_one_day' && (
+                <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 border border-orange-200 rounded px-1.5 py-0.5 text-[9px] font-bold">
+                  <Building2 className="w-2.5 h-2.5" /> بيت أبوتلات
+                </span>
+              )}
+              {ev.type === 'abo_talat_retreat' && (
+                <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 border border-purple-200 rounded px-1.5 py-0.5 text-[9px] font-bold">
+                  <Building2 className="w-2.5 h-2.5" /> خلوة بيت أبوتلات
+                </span>
+              )}
+              {isRecurring && (
+                <span className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-700 border border-indigo-200 rounded px-1.5 py-0.5 text-[9px] font-bold">
+                  <RefreshCw className="w-2.5 h-2.5" /> حجز متكرر
+                </span>
+              )}
+            </div>
+            <h4 className="font-bold text-gray-900 text-sm">{b.requester_name}</h4>
+            <p className="text-xs text-gray-500 font-semibold">{b.service_name}</p>
+          </div>
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusColor.badge}`}>
+            {statusColor.label}
+          </span>
+        </div>
+
+        {/* Contact Phone & WhatsApp */}
+        <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg text-xs border border-gray-150">
+          <div>
+            <span className="text-gray-400 font-semibold block text-[10px]">الهاتف</span>
+            <span className="font-bold text-gray-800" dir="ltr">{b.phone}</span>
+          </div>
+          <WhatsAppLink booking={b} />
+        </div>
+
+        {/* Date/Time and Places */}
+        <div className="text-xs text-gray-600 space-y-1.5">
+          {ev.type === 'church' && (
+            <>
+              <p><span className="font-bold text-gray-500">الوقت:</span> من {startAr} إلى {endAr}</p>
+              <p><span className="font-bold text-gray-500">الأماكن:</span> {b.places?.map(p => formatPlace(p)).join(' ، ') || 'لم يتم تحديد أماكن'}</p>
+            </>
+          )}
+          {ev.type === 'abo_talat_one_day' && (
+            <>
+              <p><span className="font-bold text-gray-500">بيت أبوتلات - يوم واحد:</span> {b.booking_date}</p>
+              <p><span className="font-bold text-gray-500">الوقت:</span> من {startAr} إلى {endAr}</p>
+            </>
+          )}
+          {ev.type === 'abo_talat_retreat' && (
+            <>
+              <p><span className="font-bold text-gray-500">خلوة بيت أبوتلات:</span> من {b.check_in_date} إلى {b.check_out_date} ({b.check_out_period === 'morning' ? 'صباحًا' : 'مساءً'})</p>
+            </>
+          )}
+          {isRecurring && b.occurrence_number && (
+            <p className="text-[10px] text-indigo-650 font-bold bg-indigo-50 px-2 py-0.5 rounded inline-block">حجز متكرر: {b.occurrence_number} من {b.total_occurrences}</p>
+          )}
+        </div>
+
+        {/* Notes */}
+        {b.notes && (
+          <p className="text-[11px] text-gray-600 bg-gray-50 p-2 rounded-lg border border-gray-150 break-words">{b.notes}</p>
+        )}
+
+        {/* Conflict warning */}
+        {hasConflict && (
+          <div className="flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-50 px-2 py-1 rounded border border-red-100">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> تعارض في الموعد
+          </div>
+        )}
+
+        {/* Action error */}
+        {actionError?.id === b.id && (
+          <div className="flex items-start gap-1 bg-red-50 text-red-700 rounded p-2 text-[10px] font-semibold border border-red-100">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <span>{actionError.message}</span>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex gap-2 pt-2 border-t border-gray-100">
+          {b.status === 'pending' && (
+            <>
+              <button
+                onClick={() => onApprove(b)}
+                disabled={actionLoading === b.id}
+                className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-xs cursor-pointer flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
+              >
+                {actionLoading === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                موافقة
+              </button>
+              <button
+                onClick={() => onReject(b)}
+                disabled={actionLoading === b.id}
+                className="flex-1 py-1.5 bg-red-650 hover:bg-red-700 text-white rounded-lg font-bold text-xs cursor-pointer flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
+              >
+                <X className="w-3 h-3" />
+                رفض
+              </button>
+            </>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => onDelete(b)}
+              disabled={actionLoading === b.id}
+              className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg font-bold text-xs cursor-pointer flex items-center gap-1 transition-colors border border-red-200"
+              title="حذف الطلب"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>حذف</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main AdminBookingCalendar Component ──────────────────────────────────────────
 export default function AdminBookingCalendar({
   bookings,
@@ -479,6 +637,15 @@ export default function AdminBookingCalendar({
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('month'); // 'month' | 'week' | 'day'
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [selectedDayStr, setSelectedDayStr] = useState(() => getLocalISODate(new Date()));
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Sync date selection with filter when it changes
   useEffect(() => {
@@ -486,6 +653,7 @@ export default function AdminBookingCalendar({
       const parsed = new Date(selectedDateFilter + 'T00:00:00');
       if (!isNaN(parsed.getTime())) {
         setCurrentDate(parsed);
+        setSelectedDayStr(selectedDateFilter);
       }
     }
   }, [selectedDateFilter]);
@@ -735,65 +903,77 @@ export default function AdminBookingCalendar({
       {/* ────────────────── 1. MONTH VIEW ────────────────── */}
       {viewMode === 'month' && (
         <>
-          {/* Desktop Month View (7 Columns Grid) */}
-          <div className="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          {/* Month Grid (Responsive 7 columns grid) */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {/* Weekday headers */}
             <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50">
-              {WEEKDAYS.map(day => (
-                <div key={day} className="py-3 text-center text-xs font-bold text-gray-500">
-                  {day}
+              {WEEKDAYS.map((day, idx) => (
+                <div key={day} className="py-2.5 sm:py-3 text-center text-xs font-bold text-gray-500">
+                  <span className="hidden sm:inline">{day}</span>
+                  <span className="inline sm:hidden">{WEEKDAYS_MINI[idx]}</span>
                 </div>
               ))}
             </div>
+            
             {/* Grid days */}
             <div className="grid grid-cols-7 divide-x divide-y divide-gray-100 bg-gray-100">
               {monthGridDays.map(day => {
                 const dayEvents = (eventsByDate[day.dateStr] || []).sort(sortEvents);
                 const isTodayDate = isToday(day.date);
+                const isSelected = selectedDayStr === day.dateStr;
+                const maxEvents = isMobile ? 2 : 3;
 
                 return (
                   <div
                     key={day.dateStr}
                     onClick={() => {
                       setCurrentDate(day.date);
-                      setViewMode('day');
+                      setSelectedDayStr(day.dateStr);
+                      if (!isMobile) {
+                        setViewMode('day');
+                      }
                     }}
-                    className={`min-h-[120px] p-2 bg-white flex flex-col justify-between cursor-pointer transition-colors hover:bg-gray-50/50 ${
-                      !day.isCurrentMonth && 'text-gray-300 bg-gray-50/30'
+                    className={`h-[105px] sm:min-h-[120px] md:min-h-[140px] md:h-auto p-1 sm:p-2 bg-white flex flex-col justify-between cursor-pointer transition-all ${
+                      !day.isCurrentMonth ? 'text-gray-300 bg-gray-50/30' : 'text-gray-700'
+                    } ${
+                      isSelected ? 'ring-2 ring-inset ring-[#8B0000] border-[#8B0000] bg-red-50/10 z-10' : 'hover:bg-gray-50/50'
                     }`}
                   >
                     {/* Date label */}
                     <div className="flex justify-between items-center mb-1">
-                      <span className={`text-xs font-black w-6 h-6 flex items-center justify-center rounded-full ${
-                        isTodayDate ? 'bg-[#8B0000] text-white' : day.isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                      <span className={`text-[10px] sm:text-xs font-black w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full ${
+                        isTodayDate ? 'bg-[#8B0000] text-white' : day.isCurrentMonth ? 'text-gray-750' : 'text-gray-300'
                       }`}>
                         {day.dayNumber}
                       </span>
                     </div>
 
                     {/* Events list */}
-                    <div className="flex-1 flex flex-col gap-1 overflow-hidden">
-                      {dayEvents.slice(0, 3).map(ev => {
+                    <div className="flex-1 flex flex-col gap-0.5 sm:gap-1 overflow-hidden">
+                      {dayEvents.slice(0, maxEvents).map(ev => {
                         const statusColor = STATUS_COLORS[ev.status] || STATUS_COLORS.pending;
+                        const isRetreat = ev.type === 'abo_talat_retreat';
+                        const isOneDay = ev.type === 'abo_talat_one_day';
+                        const isRec = !!ev.booking.recurrence_group_id;
                         const hasConflict = ev.type === 'church' && churchConflicts.has(ev.bookingId);
+
                         return (
                           <div
                             key={ev.id}
                             onClick={(e) => handleEventClick(e, ev)}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold truncate border flex items-center gap-1 ${statusColor.bg} ${statusColor.text} ${statusColor.border}`}
+                            className={`px-1 py-0.5 rounded text-[8px] sm:text-[10px] font-bold truncate border flex items-center gap-0.5 ${statusColor.bg} ${statusColor.text} ${statusColor.border}`}
                             title={`${ev.booking.requester_name} - ${ev.booking.service_name}`}
                           >
-                            {hasConflict && <AlertCircle className="w-2.5 h-2.5 flex-shrink-0" />}
-                            <span className="truncate">
-                              {ev.type === 'church' ? '' : (ev.type === 'abo_talat_retreat' ? 'خلوة: ' : 'بيت: ')}
-                              {ev.booking.service_name}
-                            </span>
+                            {hasConflict && <AlertCircle className="w-2 h-2 flex-shrink-0 text-red-600" />}
+                            {isRec && <RefreshCw className="w-2.5 h-2.5 flex-shrink-0 animate-spin-slow text-indigo-600" />}
+                            {(isRetreat || isOneDay) && <Building2 className="w-2.5 h-2.5 flex-shrink-0 text-orange-600" />}
+                            <span className="truncate">{getShortEventLabel(ev)}</span>
                           </div>
                         );
                       })}
-                      {dayEvents.length > 3 && (
-                        <div className="text-[10px] font-bold text-gray-400 mt-0.5">
-                          + {dayEvents.length - 3} المزيد
+                      {dayEvents.length > maxEvents && (
+                        <div className="text-[8px] sm:text-[10px] font-bold text-gray-400 mt-0.5 pr-1">
+                          + {dayEvents.length - maxEvents} المزيد
                         </div>
                       )}
                     </div>
@@ -803,36 +983,50 @@ export default function AdminBookingCalendar({
             </div>
           </div>
 
-          {/* Mobile Month View (Vertical Active Days Feed) */}
-          <div className="block md:hidden space-y-3">
-            {activeMonthDays.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-200">
-                <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-gray-400">لا توجد حجوزات في هذا الشهر</p>
+          {/* Inline day bookings list below grid */}
+          {selectedDayStr && (
+            <div className="bg-white rounded-2xl border border-gray-150 p-4 shadow-sm mt-4">
+              <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-3">
+                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-[#8B0000]" />
+                  حجوزات يوم {formatDateAr(selectedDayStr)}
+                </h3>
+                <span className="text-xs bg-gray-100 text-gray-600 font-bold px-2.5 py-0.5 rounded-full">
+                  {(() => {
+                    const dayEvents = eventsByDate[selectedDayStr] || [];
+                    return `${dayEvents.length} حجز`;
+                  })()}
+                </span>
               </div>
-            ) : (
-              activeMonthDays.map(day => (
-                <div key={day.dateStr} className="space-y-2">
-                  {/* Day Date Title */}
-                  <h3 className="text-xs font-bold text-gray-500 mr-1 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#8B0000]" />
-                    {day.dayName}، {day.dayNumber} {currentDate.toLocaleDateString('ar-EG', { month: 'short' })}
-                  </h3>
-                  {/* Day Events */}
-                  <div className="grid grid-cols-1 gap-2.5">
-                    {day.events.map(ev => (
-                      <CalendarBookingItem
+              
+              {(() => {
+                const dayEvents = (eventsByDate[selectedDayStr] || []).sort(sortEvents);
+                if (dayEvents.length === 0) {
+                  return (
+                    <div className="text-center py-6 text-gray-400">
+                      <p className="text-xs font-semibold">لا توجد حجوزات في هذا اليوم</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {dayEvents.map(ev => (
+                      <CompactActionCard
                         key={ev.id}
                         ev={ev}
-                        onClick={() => setSelectedEvent(ev)}
+                        onApprove={onApprove}
+                        onReject={onReject}
+                        onDelete={onDelete}
+                        actionLoading={actionLoading}
+                        actionError={actionError}
                         hasConflict={ev.type === 'church' && churchConflicts.has(ev.bookingId)}
                       />
                     ))}
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                );
+              })()}
+            </div>
+          )}
         </>
       )}
 
@@ -851,13 +1045,18 @@ export default function AdminBookingCalendar({
                 }`}
               >
                 {/* Column Day Header */}
-                <div className="border-b border-gray-100 pb-2 mb-3 text-center">
-                  <p className="text-xs font-bold text-gray-400">{day.dayName}</p>
-                  <p className={`text-lg font-black inline-flex w-7 h-7 items-center justify-center rounded-full mt-1 ${
-                    isTodayDate ? 'bg-[#8B0000] text-white' : 'text-gray-800'
-                  }`}>
-                    {day.dayNumber}
-                  </p>
+                <div className="border-b border-gray-150 pb-2 mb-3 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-black inline-flex w-7 h-7 items-center justify-center rounded-full ${
+                      isTodayDate ? 'bg-[#8B0000] text-white' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {day.dayNumber}
+                    </span>
+                    <span className="text-xs font-bold text-gray-500">{day.dayName}</span>
+                  </div>
+                  <span className="text-[10px] text-gray-400 font-semibold">
+                    {day.date.toLocaleDateString('ar-EG', { month: 'short' })}
+                  </span>
                 </div>
 
                 {/* Day events stack */}
