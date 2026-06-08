@@ -7,8 +7,9 @@ import {
   LogOut, Filter, Check, X, Calendar, MapPin, Clock, Phone,
   User, LayoutDashboard, Search, Loader2, AlertCircle,
   FileText, StickyNote, List, Inbox, RefreshCw, Building2,
-  UtensilsCrossed, Waves, Dumbbell, XCircle,
+  UtensilsCrossed, Waves, Dumbbell, XCircle, Trash2,
 } from 'lucide-react';
+import AdminBookingCalendar from '../components/AdminBookingCalendar';
 
 const FACILITY_LABELS = {
   kitchen:    'مطبخ',
@@ -349,6 +350,57 @@ function ApproveScopeModal({ booking, onConfirm, onCancel, loading, scopeError }
   );
 }
 
+// ── Delete modal — supports scope selection for recurring bookings ─────────────
+function DeleteModal({ booking, onConfirm, onCancel, loading }) {
+  const [scope, setScope] = useState('single'); // 'single' | 'all'
+  const isRecurring = !!booking?.recurrence_group_id;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-200" dir="rtl">
+        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 text-red-600">
+          <Trash2 className="w-5 h-5" />
+          {isRecurring ? 'حذف الحجز المتكرر' : 'حذف الطلب'}
+        </h3>
+        <div className="text-sm text-gray-600 space-y-1">
+          <p className="font-bold">هل أنت متأكد من حذف هذا الطلب؟</p>
+          <p className="text-xs text-red-500 font-semibold">سيتم حذف الطلب نهائيًا ولا يمكن التراجع عن هذا الإجراء.</p>
+        </div>
+
+        {isRecurring && (
+          <div className="space-y-2 pt-2 border-t border-gray-100">
+            <p className="text-xs font-bold text-gray-500">تطبيق الحذف على:</p>
+            <div className="space-y-2">
+              <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${scope === 'single' ? 'border-red-600 bg-red-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <input type="radio" name="deleteScope" value="single"
+                  checked={scope === 'single'} onChange={() => setScope('single')}
+                  className="w-4 h-4 text-red-600 focus:ring-red-600" />
+                <span className="text-sm font-semibold text-gray-800">حذف هذا الطلب فقط</span>
+              </label>
+              <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${scope === 'all' ? 'border-red-600 bg-red-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <input type="radio" name="deleteScope" value="all"
+                  checked={scope === 'all'} onChange={() => setScope('all')}
+                  className="w-4 h-4 text-red-600 focus:ring-red-600" />
+                <span className="text-sm font-semibold text-gray-800">حذف كل الحجوزات المتكررة المرتبطة</span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end pt-2">
+          <button onClick={onCancel} disabled={loading}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold text-sm cursor-pointer transition-colors">إلغاء</button>
+          <button onClick={() => onConfirm(scope)} disabled={loading}
+            className="px-5 py-2 rounded-lg bg-red-650 text-white font-bold hover:bg-red-700 flex items-center gap-2 disabled:opacity-70 text-sm cursor-pointer transition-colors">
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            نعم، حذف الطلب
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Abo Talat details block (shown inside BookingCard) ───────────────────────
 function AboTalatDetails({ booking }) {
   const isRetreat = booking.abo_talat_booking_type === 'retreat';
@@ -418,7 +470,7 @@ function RecurrenceBadge({ booking }) {
 }
 
 // ── Booking Card ──────────────────────────────────────────────────────────────
-function BookingCard({ booking, actionLoading, actionError, onApprove, onReject, showActions, hasConflict }) {
+function BookingCard({ booking, actionLoading, actionError, onApprove, onReject, showActions, hasConflict, onDelete }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
       {/* Card body */}
@@ -531,8 +583,19 @@ function BookingCard({ booking, actionLoading, actionError, onApprove, onReject,
       )}
 
       {/* Created date footer */}
-      <div className="px-4 sm:px-5 pb-3 text-xs text-gray-400 text-left" dir="ltr">
-        {new Date(booking.created_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}
+      <div className="px-4 sm:px-5 pb-3 text-xs text-gray-400 flex justify-between items-center" dir="rtl">
+        {onDelete && (
+          <button
+            onClick={() => onDelete(booking)}
+            className="text-red-650 hover:text-red-800 flex items-center gap-1.5 font-bold cursor-pointer transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>حذف الطلب</span>
+          </button>
+        )}
+        <span className="text-gray-400" dir="ltr">
+          {new Date(booking.created_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}
+        </span>
       </div>
     </div>
   );
@@ -560,6 +623,7 @@ function EmptyState({ text }) {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab]         = useState('pending');
+  const [dashboardView, setDashboardView] = useState('list'); // 'list' | 'calendar'
   const [bookings, setBookings]           = useState([]);
   const [loading, setLoading]             = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
@@ -567,6 +631,9 @@ export default function AdminDashboard() {
 
   // Reject modal state
   const [rejectTarget, setRejectTarget]   = useState(null); // full booking object
+
+  // Delete modal state
+  const [deleteTarget, setDeleteTarget]   = useState(null); // full booking object
 
   // Approve scope modal state (only for recurring)
   const [approveTarget, setApproveTarget]   = useState(null); // full booking object
@@ -792,6 +859,79 @@ export default function AdminDashboard() {
     fetchBookings();
   };
 
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = (booking) => {
+    setActionError(null);
+    setDeleteTarget(booking);
+  };
+
+  const handleDeleteConfirm = async (scope) => {
+    if (!deleteTarget) return;
+    setActionLoading(deleteTarget.id);
+    setActionError(null);
+
+    try {
+      if (!deleteTarget.recurrence_group_id || scope === 'single') {
+        // 1. Delete single booking_request_places safely
+        const { error: placesErr } = await supabase
+          .from('booking_request_places')
+          .delete()
+          .eq('booking_request_id', deleteTarget.id);
+
+        if (placesErr) throw placesErr;
+
+        // 2. Delete single booking_request
+        const { error: reqErr } = await supabase
+          .from('booking_requests')
+          .delete()
+          .eq('id', deleteTarget.id);
+
+        if (reqErr) throw reqErr;
+      } else {
+        // scope === 'all'
+        // 1. Get all bookings with same recurrence_group_id
+        const { data: groupRows, error: fetchErr } = await supabase
+          .from('booking_requests')
+          .select('id')
+          .eq('recurrence_group_id', deleteTarget.recurrence_group_id);
+
+        if (fetchErr) throw fetchErr;
+
+        if (groupRows && groupRows.length > 0) {
+          const ids = groupRows.map(r => r.id);
+
+          // 2. Delete booking_request_places for all ids
+          const { error: placesErr } = await supabase
+            .from('booking_request_places')
+            .delete()
+            .in('booking_request_id', ids);
+
+          if (placesErr) throw placesErr;
+
+          // 3. Delete all booking_requests in group
+          const { error: reqErr } = await supabase
+            .from('booking_requests')
+            .delete()
+            .eq('recurrence_group_id', deleteTarget.recurrence_group_id);
+
+          if (reqErr) throw reqErr;
+        }
+      }
+
+      alert('تم حذف الطلب بنجاح');
+      setDeleteTarget(null);
+      fetchBookings();
+    } catch (err) {
+      console.error(err);
+      setActionError({
+        id: deleteTarget.id,
+        message: 'حدث خطأ أثناء حذف الطلب، برجاء المحاولة مرة أخرى'
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // ── Derived counts & filters ──────────────────────────────────────────────
   const pendingCount  = bookings.filter((b) => b.status === 'pending').length;
   const approvedCount = bookings.filter((b) => b.status === 'approved').length;
@@ -817,6 +957,28 @@ export default function AdminDashboard() {
     }
     return true;
   });
+
+  const pendingCalendarBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      if (b.status !== 'pending') return false;
+      const t = pf.search.toLowerCase();
+      return !t || b.requester_name?.toLowerCase().includes(t) || b.service_name?.toLowerCase().includes(t)
+        || b.places?.some((p) => formatPlace(p).toLowerCase().includes(t));
+    });
+  }, [bookings, pf.search]);
+
+  const allCalendarBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      if (af.status   && b.status !== af.status) return false;
+      if (af.building && !b.places?.some((p) => p?.building === af.building)) return false;
+      if (af.service  && !b.service_name?.toLowerCase().includes(af.service.toLowerCase())) return false;
+      if (af.search) {
+        const t = af.search.toLowerCase();
+        if (!b.requester_name?.toLowerCase().includes(t) && !b.phone?.includes(af.search)) return false;
+      }
+      return true;
+    });
+  }, [bookings, af.status, af.building, af.service, af.search]);
 
   const churchConflicts = useMemo(() => {
     const conflicts = new Set();
@@ -864,6 +1026,16 @@ export default function AdminDashboard() {
         />
       )}
 
+      {/* Delete modal */}
+      {deleteTarget && (
+        <DeleteModal
+          booking={deleteTarget}
+          loading={actionLoading === deleteTarget.id}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
       {/* Page header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
         <div className="flex items-center gap-3 min-w-0">
@@ -888,14 +1060,37 @@ export default function AdminDashboard() {
         <StatCard icon={<X className="w-5 h-5 sm:w-7 sm:h-7" />}      colorKey="red"    label="مرفوضة" value={rejectedCount} />
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 bg-white p-1.5 rounded-xl border border-gray-100 shadow-sm w-full sm:w-fit">
-        <TabBtn active={activeTab === 'pending'} onClick={() => setActiveTab('pending')} icon={<Inbox className="w-4 h-4" />}>
-          الانتظار <span className="bg-yellow-100 text-yellow-700 rounded-full px-1.5 py-0.5 text-xs mr-1">{pendingCount}</span>
-        </TabBtn>
-        <TabBtn active={activeTab === 'all'} onClick={() => setActiveTab('all')} icon={<List className="w-4 h-4" />}>
-          جميع الطلبات
-        </TabBtn>
+      {/* Tabs & View Switch */}
+      <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+        {/* Existing Tabs */}
+        <div className="flex gap-2 bg-white p-1.5 rounded-xl border border-gray-100 shadow-sm w-full sm:w-fit">
+          <TabBtn active={activeTab === 'pending'} onClick={() => setActiveTab('pending')} icon={<Inbox className="w-4 h-4" />}>
+            الانتظار <span className="bg-yellow-100 text-yellow-700 rounded-full px-1.5 py-0.5 text-xs mr-1">{pendingCount}</span>
+          </TabBtn>
+          <TabBtn active={activeTab === 'all'} onClick={() => setActiveTab('all')} icon={<List className="w-4 h-4" />}>
+            جميع الطلبات
+          </TabBtn>
+        </div>
+
+        {/* View Switch */}
+        <div className="flex gap-2 bg-white p-1.5 rounded-xl border border-gray-100 shadow-sm w-full sm:w-fit">
+          <button
+            onClick={() => setDashboardView('list')}
+            className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
+              dashboardView === 'list' ? 'bg-[#8B0000] text-white' : 'text-gray-650 hover:bg-gray-100'
+            }`}
+          >
+            <List className="w-4 h-4" /> قائمة الطلبات
+          </button>
+          <button
+            onClick={() => setDashboardView('calendar')}
+            className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
+              dashboardView === 'calendar' ? 'bg-[#8B0000] text-white' : 'text-gray-650 hover:bg-gray-100'
+            }`}
+          >
+            <Calendar className="w-4 h-4" /> التقويم
+          </button>
+        </div>
       </div>
 
       {/* Tab 1: Pending */}
@@ -963,12 +1158,28 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {loading && <LoadingState />}
-          {!loading && pendingBookings.length === 0 && <EmptyState text="لا توجد طلبات حجز في الانتظار" />}
-          {!loading && pendingBookings.map((b) => (
-            <BookingCard key={b.id} booking={b} actionLoading={actionLoading} actionError={actionError}
-              onApprove={handleApprove} onReject={handleReject} showActions hasConflict={churchConflicts.has(b.id)} />
-          ))}
+          {dashboardView === 'list' ? (
+            <>
+              {loading && <LoadingState />}
+              {!loading && pendingBookings.length === 0 && <EmptyState text="لا توجد طلبات حجز في الانتظار" />}
+              {!loading && pendingBookings.map((b) => (
+                <BookingCard key={b.id} booking={b} actionLoading={actionLoading} actionError={actionError}
+                  onApprove={handleApprove} onReject={handleReject} showActions hasConflict={churchConflicts.has(b.id)}
+                  onDelete={handleDelete} />
+              ))}
+            </>
+          ) : (
+            <AdminBookingCalendar
+              bookings={pendingCalendarBookings}
+              selectedDateFilter={pf.date}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onDelete={handleDelete}
+              actionLoading={actionLoading}
+              actionError={actionError}
+              churchConflicts={churchConflicts}
+            />
+          )}
         </div>
       )}
 
@@ -1077,14 +1288,30 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {loading && <LoadingState />}
-          {!loading && allBookings.length === 0 && <EmptyState text="لا توجد طلبات مطابقة للبحث" />}
-          {!loading && allBookings.length > 0 && (
-            <div className="space-y-4">
-              {allBookings.map((b) => (
-                <BookingCard key={b.id} booking={b} actionLoading={null} actionError={null} showActions={false} />
-              ))}
-            </div>
+          {dashboardView === 'list' ? (
+            <>
+              {loading && <LoadingState />}
+              {!loading && allBookings.length === 0 && <EmptyState text="لا توجد طلبات مطابقة للبحث" />}
+              {!loading && allBookings.length > 0 && (
+                <div className="space-y-4">
+                  {allBookings.map((b) => (
+                    <BookingCard key={b.id} booking={b} actionLoading={null} actionError={null} showActions={false}
+                      onDelete={handleDelete} />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <AdminBookingCalendar
+              bookings={allCalendarBookings}
+              selectedDateFilter={af.date}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onDelete={handleDelete}
+              actionLoading={actionLoading}
+              actionError={actionError}
+              churchConflicts={churchConflicts}
+            />
           )}
         </div>
       )}
